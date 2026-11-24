@@ -1,10 +1,20 @@
 import { createAlert, toggleAlert, deleteAlert } from "@/app/actions";
 
-export function AlertForm({ presetErp, brands, countryCodes }: { presetErp?: string; brands: string[]; countryCodes: string[] }) {
+export function AlertForm({
+  presetErp,
+  brands,
+  countryCodes,
+  signedIn,
+}: {
+  presetErp?: string;
+  brands: string[];
+  countryCodes: string[];
+  signedIn: boolean;
+}) {
   return (
     <form action={createAlert} className="inline" style={{ display: "grid", gap: 10, maxWidth: 520 }}>
       {presetErp ? <input type="hidden" name="erp" value={presetErp} /> : null}
-      <input name="email" type="email" required placeholder="you@example.com" />
+      {!signedIn ? <input name="email" type="email" required placeholder="you@example.com" /> : null}
       <select name="kind" defaultValue="price_below">
         <option value="price_below">Price drops to or below…</option>
         <option value="in_stock">In stock / available</option>
@@ -35,6 +45,10 @@ export function AlertForm({ presetErp, brands, countryCodes }: { presetErp?: str
       <button type="submit">Create alert</button>
     </form>
   );
+}
+
+export function AuthForms() {
+  return null;
 }
 
 export function AlertRowActions({ id, active }: { id: number; active: boolean }) {

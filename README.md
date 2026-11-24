@@ -19,6 +19,20 @@ politeness delay in place, and don't hammer the shops.
   no private APIs, no scraping of disallowed paths (robots.txt is respected; search HTML pages are never hit)
 - Built-in scheduler (in-process): weekly full crawl + daily alert evaluation, no cron dependency
 
+## Currency comparison
+
+Lidl prices come in 10 different currencies across the tracked shops. Using the
+free ECB reference-rate API (frankfurter.dev, no key, pegged BGN supported),
+product pages show every country price in its local currency together with a
+`≈ EUR` equivalent, and product cards in lists show the same equivalent, so a
+PLN price can be compared against an EUR price at a glance.
+
+## Product images
+
+The crawler stores up to 4 images per product from Lidl's `imageList`; the
+product page shows a click-to-swap gallery and cards show the main image.
+Images of products already in the DB are backfilled on their next crawl.
+
 ## One-command on-prem deploy (Docker)
 
 ```bash
@@ -34,6 +48,41 @@ Seed some data from the container:
 ```bash
 docker compose exec lidlr npm run crawl -- --countries=DE,FR --max=200
 ```
+
+## Server-side updates, one command
+
+```bash
+./update.sh
+```
+
+Pulls the newest commit from this repo, rebuilds the image, restarts the
+container and prunes the old image. The database and session secret live in the
+`lidlr-data` volume, so nothing is lost on update.
+
+## Accounts & tracking
+
+- Users register with email + password (`/login`); passwords are hashed with
+  scrypt, sessions are HMAC-signed httpOnly cookies (30 days).
+- Signed-in users can **track products** from any product page with one click
+  and manage everything on `/alerts`: tracked products, alert rules, and the
+  match feed.
+- Alert rules created while signed in belong to the account (no email field):
+  matches are still emailed when `RESEND_API_KEY` is set.
+- Without `AUTH_SECRET`, a random secret is generated and persisted in
+  `data/auth-secret`. Set `AUTH_SECRET` in the compose env if you run multiple
+  replicas.
+
+## Auto-translated names
+
+Set `AUTO_TRANSLATE=1` (default in docker-compose) and every newly crawled
+product title is translated to `TRANSLATE_TARGET` (default `en`) using the free
+Google-translate community endpoint — no key, no dependency. Translations are:
+
+- stored in `Product.titleEn` and cached in-process per title,
+- shown on product cards (original underneath) and product pages,
+- backfilled on the next crawl for products already in the DB (one-time).
+
+Failures degrade silently — the original name is kept and retried next run.
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
 shell file format): `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `SITE_URL`,

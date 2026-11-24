@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { BRANDS, COUNTRIES, slugifyBrand, type CountryConfig } from "./catalog.ts";
 import { brandItems, type LidlItem } from "./client.ts";
+import { translateTitle, translationEnabled } from "../translate.ts";
 
 const prisma = new PrismaClient();
 
@@ -43,16 +44,28 @@ async function upsertItem(item: LidlItem, cc: CountryConfig): Promise<{ isNew: b
   const brandSlug = slugifyBrand(item.brandName);
   const now = new Date();
 
+  const existingProduct = await prisma.product.findUnique({ where: { erpNumber: item.erpNumber }, select: { titleEn: true } });
+  const productData = {
+    title: item.title,
+    brandName: item.brandName,
+    brandSlug,
+    lastSeen: now,
+    removed: false,
+    ...(item.images?.length ? { images: JSON.stringify(item.images.slice(0, 4)) } : {}),
+  };
+  const titleEn =
+    translationEnabled() && !existingProduct?.titleEn ? await translateTitle(item.title) : existingProduct?.titleEn ?? null;
+
   await prisma.product.upsert({
     where: { erpNumber: item.erpNumber },
-    update: { title: item.title, brandName: item.brandName, brandSlug, lastSeen: now, removed: false },
+    update: { ...productData, ...(titleEn ? { titleEn } : {}) },
     create: {
       erpNumber: item.erpNumber,
-      title: item.title,
-      brandName: item.brandName,
-      brandSlug,
+      ...productData,
       category: item.category,
       imageUrl: item.imageUrl,
+      images: item.images?.length ? JSON.stringify(item.images.slice(0, 4)) : undefined,
+      ...(titleEn ? { titleEn } : {}),
     },
   });
 

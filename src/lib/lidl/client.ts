@@ -26,6 +26,7 @@ export type LidlItem = {
   brandSlug?: string;
   category?: string;
   imageUrl?: string;
+  images?: string[];
   url?: string;
   currency?: string;
   price?: number;
@@ -47,6 +48,7 @@ type GridData = {
   category?: string;
   canonicalUrl?: string;
   image?: string;
+  imageList?: string[];
   online?: boolean;
   price?: { price?: number; oldPrice?: number; currencyCode?: string };
   stockAvailability?: { badgeInfo?: { badges?: { text?: string; type?: string }[] } };
@@ -72,6 +74,7 @@ function parseItem(it: RawItem): LidlItem | null {
     brandName: c.brand?.name,
     category: c.category,
     imageUrl: c.image,
+    images: imageList(c),
     url: c.canonicalUrl || undefined,
     currency: c.price?.currencyCode,
     price: c.price?.price,
@@ -83,6 +86,11 @@ function parseItem(it: RawItem): LidlItem | null {
     dealOfDay: !!c.dealOfDay?.active,
     flashSale: !!c.flashSales,
   };
+}
+
+function imageList(c: GridData): string[] | undefined {
+  const urls = [...new Set([c.image, ...(c.imageList ?? [])].filter((x): x is string => !!x))];
+  return urls.length ? urls.slice(0, 4) : undefined;
 }
 
 export function countryByCode(code: string): CountryConfig {

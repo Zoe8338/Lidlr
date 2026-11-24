@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { currentUser } from "@/lib/auth";
+import { logout } from "@/app/actions";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,7 +10,8 @@ export const metadata: Metadata = {
     "Track prices, new items and deals for Parkside, Esmara, Crivit, Cien, SilverCrest, Livarno, Livery, Dentalux and more across every EU Lidl online shop.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await currentUser();
   return (
     <html lang="en">
       <body>
@@ -21,8 +24,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/products">Products</Link>
               <Link href="/deals">Deals</Link>
               <Link href="/new">New items</Link>
-              <Link href="/alerts">Alerts</Link>
+              <Link href="/alerts">Tracking</Link>
             </nav>
+            <div className="spacer" />
+            {user ? (
+              <div className="userbar">
+                <span className="userchip" title={user.email}>
+                  {user.email}
+                </span>
+                <form action={logout}>
+                  <button className="button ghost" type="submit">
+                    Sign out
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <Link className="button" href="/login">
+                Sign in
+              </Link>
+            )}
           </div>
         </header>
         <main className="container">{children}</main>

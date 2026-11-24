@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { currentUser } from "@/lib/auth";
 import { AlertForm, AlertRowActions } from "@/components/AlertForm";
+import { ProductCard } from "@/components/ProductCard";
 import { BRANDS, COUNTRIES } from "@/lib/lidl/catalog";
 
 export const dynamic = "force-dynamic";
@@ -12,30 +15,65 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export default async function AlertsPage() {
-  const [alerts, events] = await Promise.all([
-    prisma.alert.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
-    prisma.alertEvent.findMany({ orderBy: { createdAt: "desc" }, take: 60 }),
-  ]);
+  const user = await currentUser();
+
+  const tracked = user
+    ? await prisma.tracking.findMany({
+        where: { userId: user.id },
+        include: { product: { include: { listings: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 60,
+      })
+    : [];
+
+  const alerts = user
+    ? await prisma.alert.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 100 })
+    : await prisma.alert.findMany({ where: { userId: null }, orderBy: { createdAt: "desc" }, take: 100 });
+
+  const alertIds = alerts.map((a) => a.id);
+  const events = alertIds.length
+    ? await prisma.alertEvent.findMany({ where: { alertId: { in: alertIds } }, orderBy: { createdAt: "desc" }, take: 60 })
+    : [];
 
   const brandFamilies = [...new Set(BRANDS.map((b) => b.family))];
   const countryCodes = COUNTRIES.filter((c) => c.enabled).map((c) => c.code);
 
   return (
     <div>
-      <h1 style={{ margin: "24px 0 6px" }}>Alerts</h1>
-      <p className="notice">
-        Alerts are evaluated after every crawl (weekly full crawl plus the daily alert check). If{" "}
-        <code>RESEND_API_KEY</code> is configured, matches are emailed; otherwise they appear in the feed below. Not
-        all Lidl APIs expose per-store shelf stock publicly, so &quot;in stock&quot; reflects the online shop&apos;s
-        availability indicator for that country.
-      </p>
+      <h1 style={{ margin: "24px 0 4px" }}>{user ? "My tracking" : "Alerts"}</h1>
 
-      <h2 className="section">Create an alert</h2>
-      <AlertForm brands={brandFamilies} countryCodes={countryCodes} />
+      {!user ? (
+        <p className="notice">
+          <Link href="/login">Sign in</Link> to track products with one click, keep all your alerts on your account,
+          and see them on any device — no email typos, no lost alerts.
+        </p>
+      ) : null}
 
-      <h2 className="section">Your alerts</h2>
+      {user ? (
+        <>
+          <h2 className="section">Tracked products</h2>
+          {tracked.length === 0 ? (
+            <div className="empty">
+              Nothing tracked yet — open any <Link href="/products">product</Link> and hit “Track”.
+            </div>
+          ) : (
+            <div className="grid">
+              {tracked.map((t) => {
+                const p = t.product;
+                const l = p.listings.find((x) => x.currentPrice != null) ?? p.listings[0];
+                return <ProductCard key={t.id} product={p} listing={l} />;
+              })}
+            </div>
+          )}
+        </>
+      ) : null}
+
+      <h2 className="section">Alert rules</h2>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <AlertForm brands={brandFamilies} countryCodes={countryCodes} signedIn={!!user} />
+      </div>
       {alerts.length === 0 ? (
-        <div className="empty">No alerts yet.</div>
+        <div className="empty">No alert rules yet.</div>
       ) : (
         <table className="prices">
           <thead>
@@ -51,10 +89,10 @@ export default async function AlertsPage() {
           <tbody>
             {alerts.map((a) => (
               <tr key={a.id}>
-                <td>{a.email}</td>
+                <td>{a.userId ? "you" : a.email}</td>
                 <td>
-                  {KIND_LABEL[a.kind] || a.kind} {a.query ? `"${a.query}"` : ""} {a.brandSlug ? `· ${a.brandSlug}` : ""}{" "}
-                  {a.maxPrice ? `· ≤ ${a.maxPrice}` : ""}
+                  {KIND_LABEL[a.kind] || a.kind} {a.query && a.kind !== "product" ? `"${a.query}"` : ""}{" "}
+                  {a.brandSlug ? `· ${a.brandSlug}` : ""} {a.maxPrice ? `· ≤ ${a.maxPrice}` : ""}
                 </td>
                 <td>{a.countryCode || "any"}</td>
                 <td>{a.lastFiredAt ? new Date(a.lastFiredAt).toLocaleDateString() : "never"}</td>
@@ -78,7 +116,7 @@ export default async function AlertsPage() {
               <tr key={e.id}>
                 <td>{new Date(e.createdAt).toLocaleString()}</td>
                 <td>{e.title}</td>
-                <td style={{ color: "var(--yellow)" }}>{e.message}</td>
+                <td className="match">{e.message}</td>
                 <td className={`badge ${e.delivered ? "" : "out"}`}>{e.delivered ? "emailed" : "pending"}</td>
               </tr>
             ))}

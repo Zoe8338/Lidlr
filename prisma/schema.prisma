@@ -22,15 +22,18 @@ model Country {
 model Product {
   erpNumber String  @id
   title     String
+  titleEn   String?
   brandName String?
   brandSlug String?
   category  String?
   imageUrl  String?
+  images    String?
   firstSeen DateTime @default(now())
   lastSeen  DateTime @default(now())
   removed   Boolean  @default(false)
   listings  Listing[]
   snapshots Snapshot[]
+  trackings Tracking[]
 }
 
 // One row per product per country shop
@@ -72,10 +75,32 @@ model Snapshot {
   @@index([erpNumber, countryCode, takenAt])
 }
 
+model User {
+  id           Int         @id @default(autoincrement())
+  email        String      @unique
+  passwordHash String
+  createdAt    DateTime    @default(now())
+  alerts       Alert[]
+  trackings    Tracking[]
+}
+
+model Tracking {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  product   Product  @relation(fields: [erpNumber], references: [erpNumber], onDelete: Cascade)
+  erpNumber String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, erpNumber])
+}
+
 model Alert {
   id        Int      @id @default(autoincrement())
   kind      String
   email     String
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int?
   query     String?
   brandSlug String?
   countryCode String?
