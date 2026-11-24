@@ -5,8 +5,8 @@ Esmara Men, Crivit, Livery/Livergy, Cien, SilverCrest (incl. SilverCrest Persona
 Tools), Dentalux and all things Livarno (Livarno, Livarno Lux, Livarno Home)**.
 
 It crawls Lidl's public online shops, records prices over time, shows weekly promotions and newly launched items,
-compares prices between EU countries, and raises alerts when something drops in price, is available again in a
-country shop, or appears as a new item.
+compares prices between EU countries, and sends notifications (email or WhatsApp) when a tracked product drops
+in price, comes back in stock, or goes on sale.
 
 Not affiliated with Lidl. Data comes from Lidl's own public website; respect their terms, keep the built-in
 politeness delay in place, and don't hammer the shops.
@@ -17,7 +17,7 @@ politeness delay in place, and don't hammer the shops.
 - Prisma + SQLite (single-file DB, swap to Postgres by changing `prisma/schema.prisma` datasource)
 - Crawler uses Lidl's public storefront search API (`/q/api/search`) with a per-country assortment/locale —
   no private APIs, no scraping of disallowed paths (robots.txt is respected; search HTML pages are never hit)
-- Built-in scheduler (in-process): weekly full crawl + daily alert evaluation, no cron dependency
+- Built-in scheduler (in-process): weekly full crawl + daily notification evaluation & delivery, no cron dependency
 
 ## Currency comparison
 
@@ -40,7 +40,7 @@ docker compose up -d --build
 ```
 
 That's it: builds the image, syncs the SQLite schema, starts the app on
-http://localhost:3000 with the weekly crawl + daily alert scheduler running, and
+http://localhost:3000 with the weekly crawl + daily notification scheduler running, and
 keeps the database in the `lidlr-data` volume (survives rebuilds and restarts).
 
 Seed some data from the container:
@@ -59,18 +59,37 @@ Pulls the newest commit from this repo, rebuilds the image, restarts the
 container and prunes the old image. The database and session secret live in the
 `lidlr-data` volume, so nothing is lost on update.
 
-## Accounts & tracking
+## Passwordless accounts & tracking
 
-- Users register with email + password (`/login`); passwords are hashed with
-  scrypt, sessions are HMAC-signed httpOnly cookies (30 days).
-- Signed-in users can **track products** from any product page with one click
-  and manage everything on `/alerts`: tracked products, alert rules, and the
-  match feed.
-- Alert rules created while signed in belong to the account (no email field):
-  matches are still emailed when `RESEND_API_KEY` is set.
+- Users sign in at `/login` with just their **email**: they receive a one-time
+  6-digit code (valid 15 minutes, delivered via Resend). **No credentials are
+  stored server-side** — login codes are kept only as an HMAC hash and are
+  deleted after use, and sessions are HMAC-signed httpOnly cookies (30 days).
+- Signed-in users **track products** from any product page with one click.
+  Tracking is ParkPrice-style: it watches for **price drops**, **restocks**
+  (online-shop availability going back to true) and **new promotions**, and
+  creates a notification when a crawl detects a change.
+- Notifications are delivered by **email** (Resend, `RESEND_API_KEY`) and/or
+  **WhatsApp** via the free [CallMeBot](https://www.callmebot.com/blog/free-api-for-whatsapp-messages/)
+  gateway (user pastes their number + personal key on the Tracking page).
+  Delivery is deduplicated (same message per product within 7 days is skipped).
+- Everything is managed on `/alerts`: tracked products, the notification feed
+  with delivery status, notification settings, and a self-serve
+  "Delete account & all my data" button.
 - Without `AUTH_SECRET`, a random secret is generated and persisted in
   `data/auth-secret`. Set `AUTH_SECRET` in the compose env if you run multiple
   replicas.
+
+## Theme & cookies
+
+- Light/dark theme selector in the header; the choice is saved in the
+  `lidlr_theme` cookie (1 year) and applied server-side via `data-theme` on
+  `<html>` so there's no flash of the wrong theme.
+- First visit shows a **cookie consent banner** — Lidlr sets only strictly
+  necessary cookies (session, theme, consent, and a transient dev-only login
+  code when no email provider is configured). No analytics or ad cookies, ever.
+- Legal pages: `/privacy`, `/cookies`, `/terms` — they document collected data,
+  third parties, cookies and GDPR-style self-serve deletion.
 
 ## Auto-translated names
 
@@ -110,7 +129,7 @@ npm run crawl -- --countries=DE,FR,ES --brands=parkside,livarno --max=200
 ```
 
 Flags: `--countries=DE,FR,ES`, `--brands=parkside,crivit,livarno`, `--max=200` (max items per brand query per
-country), `--alerts` (also evaluate alerts afterwards).
+country), `--notify` (also evaluate tracked products and deliver notifications afterwards).
 
 Trigger programmatically:
 
@@ -129,24 +148,34 @@ curl -X POST http://localhost:3000/api/crawl \
 |---|---|
 | `/` | Overview: tracked counts, brand families, latest deals, new arrivals |
 | `/products` | Search + filter by brand family, country, price sort |
-| `/products/[erp]` | Product detail: per-country price table, cheapest country highlighted, price-history chart, alert shortcut |
+| `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, price-history chart, Track button |
 | `/deals` | Current promotions (deal of the day, flash sales, promo ribbons, old→new price drops) |
 | `/new` | Items first seen within the last 7/14/30/90 days |
-| `/alerts` | Create/pause/delete alerts, match feed |
+| `/alerts` | Passwordless sign-in flow, tracked products, notification feed, email/WhatsApp settings |
+| `/privacy`, `/cookies`, `/terms` | Legal pages: privacy policy, cookie policy, terms of use |
 
-## Alerts
+## Tracking & notifications
 
-Alert kinds:
+Tracking is ParkPrice-style: one click on a product, then every crawl that
+changes something fires a notification. Signals detected by comparing the two
+newest snapshots of each country listing:
 
-- **price ≤ N** — fires when a matching listing's price is at or below a ceiling
-- **in stock** — fires when a matching listing shows available in the online shop (this is what Lidl's public
+- **price drop** — newest price is lower than the previous one
+- **restock** — availability flips from out-of-stock to in-stock (this is what Lidl's public
   data exposes; per-store shelf stock is only inside the Lidl Plus app and is not crawled)
-- **any new item** — brand-family watcher; fires for newly discovered items
+- **on sale** — a new promotion ribbon appears (deal of the day, flash sale, % discount, …)
 
-Matching is by brand family, title substring and/or country. Matches are deduplicated per condition. Delivery:
+Delivery:
 
-- With `RESEND_API_KEY` set: emails via [Resend](https://resend.com) (set `ALERT_FROM_EMAIL`, and `SITE_URL` for links)
-- Without it: matches land in the feed on `/alerts`
+- **Email** via [Resend](https://resend.com): set `RESEND_API_KEY` (this is also required for the
+  login-code flow!) and `ALERT_FROM_EMAIL`, and `SITE_URL` for links in messages
+- **WhatsApp** via the free [CallMeBot](https://www.callmebot.com/blog/free-api-for-whatsapp-messages/)
+  gateway: each user gets their own key from the bot and enters it on the Tracking page
+- Without email configured, login codes are shown in the UI (dev fallback) and
+  notifications stay in the `pending` feed on `/alerts`
+
+Cartesian dedupe: identical messages for the same product are suppressed for 7 days, and a
+single crawl run creates at most 200 notifications.
 
 ## Crawler mechanics (`src/lib/lidl/`)
 

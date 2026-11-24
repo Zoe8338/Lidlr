@@ -110,6 +110,84 @@ async function upsertItem(item: LidlItem, cc: CountryConfig): Promise<{ isNew: b
   };
 }
 
+export type TrackSignal = {
+  erpNumber: string;
+  title: string;
+  kind: "price_drop" | "restock" | "on_sale";
+  message: string;
+};
+
+const MAX_NOTIFS_PER_RUN = 200;
+
+// ParkPrice-style evaluation: for every tracked product, compare the two
+// newest snapshots of each country listing and emit signals on
+// price drops, restocks and new promo ribbons.
+export async function evaluateTrackings(): Promise<number> {
+  const trackings = await prisma.tracking.findMany({ include: { product: { include: { listings: true } } } });
+  if (!trackings.length) return 0;
+
+  let created = 0;
+  const seenSignals = new Set<string>();
+
+  for (const t of trackings) {
+    const p = t.product;
+    for (const listing of p.listings) {
+      const snaps = await prisma.snapshot.findMany({
+        where: { listingId: listing.id },
+        orderBy: { takenAt: "desc" },
+        take: 2,
+      });
+      if (snaps.length < 2) continue;
+      const [nowSn, beforeSn] = snaps;
+
+      let signal: TrackSignal | null = null;
+      if (nowSn.price != null && beforeSn.price != null && nowSn.price < beforeSn.price) {
+        signal = {
+          erpNumber: p.erpNumber,
+          title: p.titleEn || p.title,
+          kind: "price_drop",
+          message: `Price drop in ${listing.countryCode}: ${beforeSn.price.toFixed(2)} → ${nowSn.price.toFixed(2)} ${listing.currency ?? ""}`,
+        };
+      } else if (beforeSn.available === false && nowSn.available === true) {
+        signal = {
+          erpNumber: p.erpNumber,
+          title: p.titleEn || p.title,
+          kind: "restock",
+          message: `Back in stock in ${listing.countryCode}${nowSn.price != null ? ` at ${nowSn.price.toFixed(2)} ${listing.currency ?? ""}` : ""}`,
+        };
+      } else if (nowSn.promo && nowSn.promo !== beforeSn.promo) {
+        signal = {
+          erpNumber: p.erpNumber,
+          title: p.titleEn || p.title,
+          kind: "on_sale",
+          message: `New promo in ${listing.countryCode}: ${nowSn.promo}`,
+        };
+      }
+      if (!signal) continue;
+
+      const dupe = await prisma.notification.findFirst({
+        where: {
+          userId: t.userId,
+          erpNumber: signal.erpNumber,
+          message: signal.message,
+          createdAt: { gt: new Date(Date.now() - 7 * 24 * 3600 * 1000) },
+        },
+      });
+      if (dupe) continue;
+      const sigKey = `${t.userId}:${signal.erpNumber}:${signal.kind}`;
+      if (seenSignals.has(sigKey)) continue;
+
+      await prisma.notification.create({
+        data: { userId: t.userId, erpNumber: t.erpNumber, title: signal.title, message: signal.message },
+      });
+      seenSignals.add(sigKey);
+      created++;
+      if (created >= MAX_NOTIFS_PER_RUN) return created;
+    }
+  }
+  return created;
+}
+
 export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
   await ensureCountries();
   const run = await prisma.crawlRun.create({
@@ -156,54 +234,4 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
   });
 
   return { runId: run.id, countries, newItems, priceChanges, errors, items };
-}
-
-export async function checkAlerts(): Promise<number> {
-  const alerts = await prisma.alert.findMany({ where: { active: true } });
-  let fired = 0;
-  for (const alert of alerts) {
-    const where: { countryCode?: string; currentPrice?: { not?: null; lte?: number } } = {};
-    if (alert.countryCode) where.countryCode = alert.countryCode;
-    if (alert.maxPrice) where.currentPrice = { not: null, lte: alert.maxPrice };
-
-    const products = await prisma.product.findMany({
-      where: {
-        removed: false,
-        ...(alert.brandSlug ? { brandSlug: alert.brandSlug } : {}),
-        ...(alert.query ? { title: { contains: alert.query } } : {}),
-      },
-      include: { listings: { where } },
-      take: 50,
-    });
-
-    const matches = products
-      .map((p) => ({ p, l: p.listings.find((x) => !alert.countryCode || x.countryCode === alert.countryCode) }))
-      .filter((m) => m.l);
-
-    for (const m of matches) {
-      const l = m!.l!;
-      let message: string;
-      if (alert.kind === "in_stock") {
-        if (!l.stockOk) continue;
-        message = `Back in stock in ${l.countryCode} at ${(l.currentPrice ?? 0).toFixed(2)} ${l.currency}`;
-      } else if (alert.kind === "price_below") {
-        if (l.currentPrice == null || l.currentPrice > (alert.maxPrice ?? Infinity)) continue;
-        message = `Now ${l.currentPrice.toFixed(2)} ${l.currency} in ${l.countryCode} (≤ ${alert.maxPrice})`;
-      } else {
-        message = `Matched in ${l.countryCode}: ${m.p.title}`;
-      }
-      const already = await prisma.alertEvent.findFirst({
-        where: { alertId: alert.id, erpNumber: m.p.erpNumber, title: message },
-      });
-      if (already) continue;
-      await prisma.alertEvent.create({
-        data: { alertId: alert.id, erpNumber: m.p.erpNumber, title: m.p.title, message },
-      });
-      fired++;
-    }
-    if (fired > 0) {
-      await prisma.alert.update({ where: { id: alert.id }, data: { lastFiredAt: new Date() } });
-    }
-  }
-  return fired;
 }

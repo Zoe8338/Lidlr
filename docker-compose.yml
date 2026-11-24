@@ -12,7 +12,7 @@ services:
       - lidlr-data:/app/data
     environment:
       DATABASE_URL: file:/app/data/lidlr.db
-      # Weekly full crawl + daily alert checks run inside the container by default.
+      # Weekly full crawl + daily tracking evaluation run inside the container by default.
       # Set to "1" to disable the scheduler and drive crawls yourself.
       SCHEDULER_DISABLED: ""
       # Auto-translate product titles (12 target languages supported by the
@@ -22,7 +22,8 @@ services:
       # Session signing secret. Leave empty to auto-generate and persist one
       # in the data volume, or set your own random string.
       AUTH_SECRET: "${AUTH_SECRET:-}"
-      # Optional email delivery for alerts:
+      # REQUIRED for passwordless login codes + email notifications:
+      # without it, login codes are shown in the UI (dev fallback only).
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       ALERT_FROM_EMAIL: "${ALERT_FROM_EMAIL:-lidlr@example.com}"
       SITE_URL: "${SITE_URL:-http://localhost:3000}"

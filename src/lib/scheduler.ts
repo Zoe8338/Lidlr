@@ -1,5 +1,5 @@
-import { runCrawl, checkAlerts } from "./lidl/crawler.ts";
-import { deliverPendingAlertEvents } from "./alerts.ts";
+import { runCrawl, evaluateTrackings } from "./lidl/crawler.ts";
+import { deliverPendingNotifications } from "./notify.ts";
 
 const WEEKLY_MS = 7 * 24 * 3600 * 1000;
 const DAILY_MS = 24 * 3600 * 1000;
@@ -16,13 +16,18 @@ async function safe(name: string, fn: () => Promise<unknown>) {
 
 export function startScheduler() {
   if (process.env.SCHEDULER_DISABLED === "1") return;
-  void safe("weekly-crawl", () => runCrawl({ source: "scheduled-weekly" }));
+  void safe("weekly-crawl", async () => {
+    const summary = await runCrawl({ source: "scheduled-weekly" });
+    await safe("track-eval", async () => evaluateTrackings());
+    await safe("notif-delivery", async () => deliverPendingNotifications());
+    return summary;
+  });
   setTimeout(() => {
     const weekly = () => safe("weekly-crawl", () => runCrawl({ source: "scheduled-weekly" }));
     const daily = () =>
       (async () => {
-        await safe("alert-check", async () => checkAlerts());
-        await safe("alert-delivery", async () => deliverPendingAlertEvents());
+        await safe("track-eval", async () => evaluateTrackings());
+        await safe("notif-delivery", async () => deliverPendingNotifications());
       })();
     setInterval(weekly, WEEKLY_MS);
     setInterval(daily, DAILY_MS);

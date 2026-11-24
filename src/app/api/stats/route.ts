@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
 export async function GET() {
-  const [products, listings, snapshots, alerts, runs] = await Promise.all([
+  const [products, listings, snapshots, trackings, notifications, runs] = await Promise.all([
     prisma.product.count(),
     prisma.listing.count(),
     prisma.snapshot.count(),
-    prisma.alert.count({ where: { active: true } }),
+    prisma.tracking.count(),
+    prisma.notification.count(),
     prisma.crawlRun.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
   ]);
-  return NextResponse.json({ products, listings, snapshots, activeAlerts: alerts, recentRuns: runs });
+  return NextResponse.json({ products, listings, snapshots, trackings, notifications, recentRuns: runs });
 }

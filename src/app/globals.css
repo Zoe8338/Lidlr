@@ -154,6 +154,7 @@ form.inline button, .button {
 form.inline button:hover, .button:hover { filter: brightness(1.08); text-decoration: none; }
 .button.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 .button.danger { background: var(--surface); color: var(--red); border: 1px solid #f0c9c9; }
+.theme-toggle { padding: 8px 12px; font-size: 13px; }
 
 table.prices { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); }
 table.prices th, table.prices td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 14px; }
@@ -173,5 +174,60 @@ table.prices tr.best td { color: var(--green); font-weight: 700; background: #f2
 }
 
 footer.site { margin: 60px 0 30px; color: var(--muted); font-size: 13px; }
+.footer-links { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.footer-links a { color: var(--muted); }
+.footer-links a:hover { color: var(--accent); }
 .empty { color: var(--muted); padding: 30px 0; text-align: center; }
 .pager { display: flex; gap: 8px; margin: 20px 0; }
+
+/* Cookie consent banner */
+.cookie-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(16, 24, 40, 0.18);
+  padding: 16px 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.cookie-banner p { margin: 0 0 12px; }
+.cookie-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.cookie-actions .button { padding: 8px 14px; font-size: 13px; }
+
+/* Checkbox rows inside inline forms (notification settings etc.) */
+form.inline label { display: block; }
+form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: var(--accent); }
+
+/* ---- Dark theme ---- */
+[data-theme="dark"] {
+  --bg: #0b0f14;
+  --surface: #131a22;
+  --surface2: #1a232e;
+  --border: #26333f;
+  --text: #e8eef4;
+  --muted: #8aa0b4;
+  --accent: #4da3ff;
+  --blue-light: #4da3ff;
+  --yellow: #fbbf24;
+  --red: #f47b7b;
+  --green: #4ade80;
+}
+
+[data-theme="dark"] body { box-shadow: none; }
+[data-theme="dark"] header.site { box-shadow: none; }
+[data-theme="dark"] .card img { background: var(--surface2); }
+[data-theme="dark"] .notice { background: #16222f; border-color: #2b4257; color: #9cc3e8; }
+[data-theme="dark"] .badge.deal { background: #332026; color: var(--red); }
+[data-theme="dark"] .badge.new { background: #16281e; color: var(--green); }
+[data-theme="dark"] .badge.out { background: var(--surface2); color: var(--muted); }
+[data-theme="dark"] table.prices tr.best td { background: #16281e; color: var(--green); }
+[data-theme="dark"] .button.danger { border-color: #4a2a2e; }
+[data-theme="dark"] .cookie-banner { box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6); }

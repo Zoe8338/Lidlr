@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cookies } from "next/headers";
@@ -6,6 +6,7 @@ import { prisma } from "./db";
 
 const COOKIE = "lidlr_session";
 const SESSION_DAYS = 30;
+const CODE_TTL_MS = 15 * 60 * 1000;
 
 let cachedSecret: Buffer | null = null;
 
@@ -29,21 +30,37 @@ function secret(): Buffer {
   return cachedSecret;
 }
 
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  const candidate = scryptSync(password, salt, 64);
-  const expected = Buffer.from(hash, "hex");
-  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
-}
-
 function sign(payload: string): string {
   return createHmac("sha256", secret()).update(payload).digest("hex");
+}
+
+export function hashCode(code: string): string {
+  return createHmac("sha256", secret()).update(code.toUpperCase().trim()).digest("hex");
+}
+
+export function generateCode(): string {
+  return String(randomBytes(3).readUIntBE(0, 3) % 1000000).padStart(6, "0");
+}
+
+export async function issueLoginCode(email: string): Promise<string> {
+  const user = await prisma.user.upsert({ where: { email }, update: {}, create: { email } });
+  await prisma.loginToken.deleteMany({ where: { userId: user.id, usedAt: null } });
+  const code = generateCode();
+  await prisma.loginToken.create({
+    data: { userId: user.id, codeHash: hashCode(code), expiresAt: new Date(Date.now() + CODE_TTL_MS) },
+  });
+  return code;
+}
+
+export async function verifyLoginCode(email: string, code: string): Promise<number | null> {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return null;
+  const token = await prisma.loginToken.findFirst({
+    where: { userId: user.id, codeHash: hashCode(code), usedAt: null, expiresAt: { gt: new Date() } },
+  });
+  if (!token) return null;
+  await prisma.loginToken.update({ where: { id: token.id }, data: { usedAt: new Date() } });
+  return user.id;
 }
 
 export async function startSession(userId: number) {
@@ -80,4 +97,9 @@ export async function currentUser() {
   const id = parseSessionToken(jar.get(COOKIE)?.value);
   if (!id) return null;
   return prisma.user.findUnique({ where: { id } });
+}
+
+export async function getTheme(): Promise<"light" | "dark"> {
+  const jar = await cookies();
+  return jar.get("lidlr_theme")?.value === "dark" ? "dark" : "light";
 }

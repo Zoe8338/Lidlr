@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { currentUser } from "@/lib/auth";
+import { currentUser, getTheme } from "@/lib/auth";
 import { logout } from "@/app/actions";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { CookieBanner } from "@/components/CookieBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,9 +13,9 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const user = await currentUser();
+  const [user, theme] = await Promise.all([currentUser(), getTheme()]);
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme}>
       <body>
         <header className="site">
           <div className="container inner">
@@ -27,6 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/alerts">Tracking</Link>
             </nav>
             <div className="spacer" />
+            <ThemeToggle />
             {user ? (
               <div className="userbar">
                 <span className="userchip" title={user.email}>
@@ -47,9 +50,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </header>
         <main className="container">{children}</main>
         <footer className="site container">
-          Lidlr is an independent tracker and is not affiliated with Lidl. Data is crawled from Lidl&apos;s public
-          online shops; in-store availability is based on the online shop indicators.
+          <div className="footer-links">
+            <Link href="/privacy">Privacy</Link>
+            <span>·</span>
+            <Link href="/cookies">Cookies</Link>
+            <span>·</span>
+            <Link href="/terms">Terms</Link>
+          </div>
+          <p>
+            Lidlr is an independent tracker and is not affiliated with Lidl. Data is crawled from Lidl&apos;s public
+            online shops; in-store availability is based on the online shop indicators.
+          </p>
         </footer>
+        <CookieBanner />
       </body>
     </html>
   );

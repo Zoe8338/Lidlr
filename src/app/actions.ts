@@ -2,31 +2,34 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
-import { endSession, hashPassword, startSession, verifyPassword, currentUser } from "@/lib/auth";
+import { currentUser, endSession, issueLoginCode, startSession, verifyLoginCode } from "@/lib/auth";
+import { sendLoginCode } from "@/lib/mail";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export async function register(formData: FormData) {
+export async function requestLogin(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
   if (!EMAIL_RE.test(email)) throw new Error("Valid email required");
-  if (password.length < 8) throw new Error("Password needs at least 8 characters");
-
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) throw new Error("This email is already registered");
-
-  const user = await prisma.user.create({ data: { email, passwordHash: hashPassword(password) } });
-  await startSession(user.id);
-  redirect("/alerts");
+  const code = await issueLoginCode(email);
+  const sent = await sendLoginCode(email, code);
+  if (!sent) {
+    const jar = await cookies();
+    jar.set("lidlr_devcode", code, { httpOnly: true, sameSite: "lax", maxAge: 900, path: "/" });
+  }
+  redirect(`/login/verify?email=${encodeURIComponent(email)}`);
 }
 
-export async function login(formData: FormData) {
+export async function confirmLogin(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !verifyPassword(password, user.passwordHash)) throw new Error("Wrong email or password");
-  await startSession(user.id);
+  const code = String(formData.get("code") || "");
+  if (!EMAIL_RE.test(email) || !code) throw new Error("Email and code required");
+  const userId = await verifyLoginCode(email, code);
+  if (!userId) throw new Error("Invalid or expired code — request a new one");
+  const jar = await cookies();
+  jar.delete("lidlr_devcode");
+  await startSession(userId);
   redirect("/alerts");
 }
 
@@ -54,44 +57,40 @@ export async function toggleTrack(formData: FormData) {
   revalidatePath(`/products/${erp}`);
 }
 
-export async function createAlert(formData: FormData) {
-  const kind = String(formData.get("kind") || "price_below");
+export async function saveNotifSettings(formData: FormData) {
   const user = await currentUser();
-  const email = user ? user.email : String(formData.get("email") || "").trim();
-  const query = String(formData.get("query") || "").trim() || null;
-  const brandSlug = String(formData.get("brandSlug") || "").trim() || null;
-  const countryCode = String(formData.get("countryCode") || "").trim() || null;
-  const erp = String(formData.get("erp") || "").trim() || null;
-  const maxPriceRaw = String(formData.get("maxPrice") || "").trim();
-  const maxPrice = maxPriceRaw ? Number(maxPriceRaw.replace(",", ".")) : null;
-
-  if (!EMAIL_RE.test(email)) throw new Error("Valid email required — sign in to use your account email");
-  if (kind === "price_below" && (maxPrice == null || Number.isNaN(maxPrice)))
-    throw new Error("Price ceiling required for price alerts");
-
-  await prisma.alert.create({
+  if (!user) throw new Error("Sign in required");
+  const notifyEmail = formData.get("notifyEmail") === "on";
+  const rawPhone = String(formData.get("whatsappPhone") || "").trim().replace(/[^+\d]/g, "");
+  const whatsappKey = String(formData.get("whatsappKey") || "").trim();
+  const notifyWhatsapp = !!rawPhone && !!whatsappKey;
+  await prisma.user.update({
+    where: { id: user.id },
     data: {
-      kind: erp ? "product" : kind,
-      email,
-      userId: user?.id ?? null,
-      query: erp ? erp : query ? query.toLowerCase() : null,
-      brandSlug,
-      countryCode,
-      maxPrice: kind === "price_below" ? maxPrice : null,
+      notifyEmail,
+      notifyWhatsapp,
+      whatsappPhone: rawPhone || null,
+      whatsappKey: whatsappKey || user.whatsappKey,
     },
   });
   revalidatePath("/alerts");
 }
 
-export async function toggleAlert(formData: FormData) {
-  const id = Number(formData.get("id"));
-  const active = String(formData.get("active")) === "1";
-  await prisma.alert.update({ where: { id }, data: { active } });
-  revalidatePath("/alerts");
+export async function deleteAccount() {
+  const user = await currentUser();
+  if (!user) throw new Error("Sign in required");
+  await prisma.user.delete({ where: { id: user.id } });
+  await endSession();
+  redirect("/");
 }
 
-export async function deleteAlert(formData: FormData) {
-  const id = Number(formData.get("id"));
-  await prisma.alert.delete({ where: { id } });
-  revalidatePath("/alerts");
+export async function dismissCookies(formData: FormData) {
+  const choice = String(formData.get("choice") || "all");
+  const jar = await cookies();
+  jar.set("lidlr_consent", choice === "essential" ? "essential" : "all", {
+    sameSite: "lax",
+    maxAge: 365 * 24 * 3600,
+    path: "/",
+  });
+  revalidatePath("/");
 }

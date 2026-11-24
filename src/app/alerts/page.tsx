@@ -1,104 +1,106 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth";
-import { AlertForm, AlertRowActions } from "@/components/AlertForm";
+import { emailConfigured } from "@/lib/mail";
+import { toggleTrack, saveNotifSettings, deleteAccount } from "@/app/actions";
 import { ProductCard } from "@/components/ProductCard";
-import { BRANDS, COUNTRIES } from "@/lib/lidl/catalog";
 
 export const dynamic = "force-dynamic";
 
-const KIND_LABEL: Record<string, string> = {
-  price_below: "price ≤",
-  in_stock: "in stock",
-  new_item: "new items",
-  product: "product",
-};
-
-export default async function AlertsPage() {
+export default async function TrackingPage() {
   const user = await currentUser();
 
-  const tracked = user
-    ? await prisma.tracking.findMany({
-        where: { userId: user.id },
-        include: { product: { include: { listings: true } } },
-        orderBy: { createdAt: "desc" },
-        take: 60,
-      })
-    : [];
+  if (!user) {
+    return (
+      <div>
+        <h1 style={{ margin: "24px 0 8px" }}>Tracking</h1>
+        <p className="notice">
+          Tracking is ParkPrice-style: track any product with one click and get notified by email or WhatsApp when
+          its price drops, it comes back in stock, or it goes on sale. <Link href="/login">Sign in with your
+          email</Link> — we send you a one-time code, no password is ever stored.
+        </p>
+      </div>
+    );
+  }
 
-  const alerts = user
-    ? await prisma.alert.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 100 })
-    : await prisma.alert.findMany({ where: { userId: null }, orderBy: { createdAt: "desc" }, take: 100 });
+  const tracked = await prisma.tracking.findMany({
+    where: { userId: user.id },
+    include: { product: { include: { listings: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 120,
+  });
 
-  const alertIds = alerts.map((a) => a.id);
-  const events = alertIds.length
-    ? await prisma.alertEvent.findMany({ where: { alertId: { in: alertIds } }, orderBy: { createdAt: "desc" }, take: 60 })
-    : [];
+  const notifications = await prisma.notification.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 60,
+  });
 
-  const brandFamilies = [...new Set(BRANDS.map((b) => b.family))];
-  const countryCodes = COUNTRIES.filter((c) => c.enabled).map((c) => c.code);
+  const whatsappReady = !!user.whatsappPhone && !!user.whatsappKey;
 
   return (
     <div>
-      <h1 style={{ margin: "24px 0 4px" }}>{user ? "My tracking" : "Alerts"}</h1>
+      <h1 style={{ margin: "24px 0 4px" }}>My tracking</h1>
+      <p className="notice">
+        You get a {emailConfigured() ? "email" : "notification"} whenever a tracked product{" "}
+        <strong>drops in price</strong>, <strong>comes back in stock</strong>, or <strong>goes on sale</strong>{" "}
+        in any crawled country. Track more products from any{" "}
+        <Link href="/products">product page</Link>.
+      </p>
 
-      {!user ? (
-        <p className="notice">
-          <Link href="/login">Sign in</Link> to track products with one click, keep all your alerts on your account,
-          and see them on any device — no email typos, no lost alerts.
-        </p>
-      ) : null}
+      <h2 className="section">Tracked products ({tracked.length})</h2>
+      {tracked.length === 0 ? (
+        <div className="empty">
+          Nothing tracked yet — open any <Link href="/products">product</Link> and hit &ldquo;Track this
+          product&rdquo;.
+        </div>
+      ) : (
+        <div className="grid">
+          {tracked.map((t) => {
+            const p = t.product;
+            const l = p.listings.find((x) => x.currentPrice != null) ?? p.listings[0];
+            return (
+              <div key={t.id} style={{ position: "relative" }}>
+                <ProductCard product={p} listing={l} />
+                <form action={toggleTrack} style={{ position: "absolute", top: 8, right: 8 }}>
+                  <input type="hidden" name="erp" value={t.erpNumber} />
+                  <button className="button danger" type="submit" title="Stop tracking">
+                    ✕
+                  </button>
+                </form>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      {user ? (
-        <>
-          <h2 className="section">Tracked products</h2>
-          {tracked.length === 0 ? (
-            <div className="empty">
-              Nothing tracked yet — open any <Link href="/products">product</Link> and hit “Track”.
-            </div>
-          ) : (
-            <div className="grid">
-              {tracked.map((t) => {
-                const p = t.product;
-                const l = p.listings.find((x) => x.currentPrice != null) ?? p.listings[0];
-                return <ProductCard key={t.id} product={p} listing={l} />;
-              })}
-            </div>
-          )}
-        </>
-      ) : null}
-
-      <h2 className="section">Alert rules</h2>
-      <div className="card" style={{ marginBottom: 16 }}>
-        <AlertForm brands={brandFamilies} countryCodes={countryCodes} signedIn={!!user} />
-      </div>
-      {alerts.length === 0 ? (
-        <div className="empty">No alert rules yet.</div>
+      <h2 className="section">Notifications</h2>
+      {notifications.length === 0 ? (
+        <div className="empty">No notifications yet — this feed fills as crawls spot changes on tracked products.</div>
       ) : (
         <table className="prices">
           <thead>
             <tr>
-              <th>For</th>
-              <th>Match</th>
-              <th>Country</th>
-              <th>Notify</th>
-              <th>Status</th>
+              <th>When</th>
+              <th>What</th>
+              <th>Delivery</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {alerts.map((a) => (
-              <tr key={a.id}>
-                <td>{a.userId ? "you" : a.email}</td>
+            {notifications.map((n) => (
+              <tr key={n.id}>
+                <td>{new Date(n.createdAt).toLocaleString()}</td>
                 <td>
-                  {KIND_LABEL[a.kind] || a.kind} {a.query && a.kind !== "product" ? `"${a.query}"` : ""}{" "}
-                  {a.brandSlug ? `· ${a.brandSlug}` : ""} {a.maxPrice ? `· ≤ ${a.maxPrice}` : ""}
+                  {n.message}
                 </td>
-                <td>{a.countryCode || "any"}</td>
-                <td>{a.lastFiredAt ? new Date(a.lastFiredAt).toLocaleDateString() : "never"}</td>
-                <td className={`badge ${a.active ? "" : "out"}`}>{a.active ? "active" : "paused"}</td>
+                <td className={`badge ${n.emailed || n.whatsapp ? "" : "out"}`}>
+                  {n.emailed && n.whatsapp ? "sent" : n.emailed ? "emailed" : n.whatsapp ? "whatsapp" : "pending"}
+                </td>
                 <td>
-                  <AlertRowActions id={a.id} active={a.active} />
+                  {n.erpNumber ? (
+                    <Link href={`/products/${n.erpNumber}`}>view ↗</Link>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -106,23 +108,69 @@ export default async function AlertsPage() {
         </table>
       )}
 
-      <h2 className="section">Recent matches</h2>
-      {events.length === 0 ? (
-        <div className="empty">Nothing matched yet.</div>
-      ) : (
-        <table className="prices">
-          <tbody>
-            {events.map((e) => (
-              <tr key={e.id}>
-                <td>{new Date(e.createdAt).toLocaleString()}</td>
-                <td>{e.title}</td>
-                <td className="match">{e.message}</td>
-                <td className={`badge ${e.delivered ? "" : "out"}`}>{e.delivered ? "emailed" : "pending"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <h2 className="section">Notification settings</h2>
+      <div className="card" style={{ maxWidth: 560 }}>
+        <form action={saveNotifSettings} className="inline" style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" name="notifyEmail" defaultChecked={user.notifyEmail} />
+            <span>Email me notifications ({user.email})</span>
+          </label>
+
+          <div>
+            <strong>WhatsApp</strong> (free via{" "}
+            <a href="https://www.callmebot.com/blog/free-api-for-whatsapp-messages/" target="_blank" rel="noreferrer">
+              CallMeBot
+            </a>
+            ) — message their bot once to get your personal key, then paste it here.
+          </div>
+          <label>
+            <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 4 }}>
+              WhatsApp number (with country code, e.g. +351912345678)
+            </div>
+            <input name="whatsappPhone" defaultValue={user.whatsappPhone ?? ""} placeholder="+351912345678" />
+          </label>
+          <label>
+            <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 4 }}>
+              CallMeBot API key
+            </div>
+            <input
+              name="whatsappKey"
+              type="password"
+              defaultValue=""
+              placeholder={user.whatsappKey ? "••••• (saved — leave empty to keep)" : "paste your key"}
+            />
+          </label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              name="notifyWhatsapp"
+              defaultChecked={user.notifyWhatsapp}
+              disabled={!whatsappReady}
+            />
+            <span>Send notifications to WhatsApp{whatsappReady ? "" : " (add number + key first)"}</span>
+          </label>
+
+          <div>
+            <button type="submit">Save settings</button>
+          </div>
+          <div style={{ color: "var(--muted)", fontSize: 12.5 }}>
+            Email is delivered via Resend and WhatsApp via CallMeBot. The WhatsApp key is stored only to send your
+            own notifications.
+          </div>
+        </form>
+      </div>
+
+      <h2 className="section">Account</h2>
+      <div className="card" style={{ maxWidth: 560 }}>
+        <div style={{ marginBottom: 12 }}>
+          Signed in as <strong>{user.email}</strong> — since {new Date(user.createdAt).toLocaleDateString()}.
+        </div>
+        <form action={deleteAccount}>
+          <button className="button danger" type="submit">
+            Delete account &amp; all my data
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

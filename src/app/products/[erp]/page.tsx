@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth";
 import { COUNTRIES } from "@/lib/lidl/catalog";
 import { PriceChart } from "@/components/PriceChart";
-import { AlertForm } from "@/components/AlertForm";
 import { Gallery } from "@/components/Gallery";
 import { toggleTrack } from "@/app/actions";
 import { convert, getFxRates } from "@/lib/fx";
@@ -75,9 +74,6 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
                 Track this product
               </Link>
             )}
-            <Link className="button ghost" href={`/alerts?erp=${erp}`}>
-              Create alert for this product
-            </Link>
           </div>
         </div>
       </div>

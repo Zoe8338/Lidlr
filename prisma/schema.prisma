@@ -8,51 +8,51 @@ datasource db {
 }
 
 model Country {
-  code     String    @id
-  name     String
-  host     String
-  locale   String
+  code       String    @id
+  name       String
+  host       String
+  locale     String
   assortment String
-  currency String
-  enabled  Boolean   @default(true)
-  listings Listing[]
-  Alert    Alert[]
+  currency   String
+  enabled    Boolean   @default(true)
+  listings   Listing[]
 }
 
 model Product {
-  erpNumber String  @id
-  title     String
-  titleEn   String?
-  brandName String?
-  brandSlug String?
-  category  String?
-  imageUrl  String?
-  images    String?
-  firstSeen DateTime @default(now())
-  lastSeen  DateTime @default(now())
-  removed   Boolean  @default(false)
-  listings  Listing[]
-  snapshots Snapshot[]
-  trackings Tracking[]
+  erpNumber     String         @id
+  title         String
+  titleEn       String?
+  brandName     String?
+  brandSlug     String?
+  category      String?
+  imageUrl      String?
+  images        String?
+  firstSeen     DateTime       @default(now())
+  lastSeen      DateTime       @default(now())
+  removed       Boolean        @default(false)
+  listings      Listing[]
+  snapshots     Snapshot[]
+  trackings     Tracking[]
+  notifications Notification[]
 }
 
 // One row per product per country shop
 model Listing {
-  id          Int      @id @default(autoincrement())
-  product     Product  @relation(fields: [erpNumber], references: [erpNumber])
-  erpNumber   String
-  countryCode String
-  country     Country  @relation(fields: [countryCode], references: [code])
-  url         String?
-  currentPrice Float?
-  oldPrice    Float?
-  currency    String?
-  online      Boolean?
-  stockText   String?
-  stockOk     Boolean @default(false)
-  promo       String?
+  id             Int        @id @default(autoincrement())
+  product        Product    @relation(fields: [erpNumber], references: [erpNumber])
+  erpNumber      String
+  countryCode    String
+  country        Country    @relation(fields: [countryCode], references: [code])
+  url            String?
+  currentPrice   Float?
+  oldPrice       Float?
+  currency       String?
+  online         Boolean?
+  stockText      String?
+  stockOk        Boolean    @default(false)
+  promo          String?
   priceUpdatedAt DateTime?
-  snapshots   Snapshot[]
+  snapshots      Snapshot[]
 
   @@unique([erpNumber, countryCode])
   @@index([countryCode, currentPrice])
@@ -72,16 +72,33 @@ model Snapshot {
   promo       String?
   takenAt     DateTime @default(now())
 
-  @@index([erpNumber, countryCode, takenAt])
+  @@index([listingId, takenAt])
 }
 
 model User {
-  id           Int         @id @default(autoincrement())
-  email        String      @unique
-  passwordHash String
-  createdAt    DateTime    @default(now())
-  alerts       Alert[]
-  trackings    Tracking[]
+  id             Int            @id @default(autoincrement())
+  email          String         @unique
+  notifyEmail    Boolean        @default(true)
+  notifyWhatsapp Boolean        @default(false)
+  whatsappPhone  String?
+  whatsappKey    String?
+  createdAt      DateTime       @default(now())
+  trackings      Tracking[]
+  notifications  Notification[]
+  loginTokens    LoginToken[]
+}
+
+// One-time login codes; only a sha256 hash of the code is stored.
+model LoginToken {
+  id        Int       @id @default(autoincrement())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  codeHash  String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 model Tracking {
@@ -95,42 +112,29 @@ model Tracking {
   @@unique([userId, erpNumber])
 }
 
-model Alert {
+model Notification {
   id        Int      @id @default(autoincrement())
-  kind      String
-  email     String
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int?
-  query     String?
-  brandSlug String?
-  countryCode String?
-  maxPrice  Float?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  lastFiredAt DateTime?
-  country   Country? @relation(fields: [countryCode], references: [code])
-  events    AlertEvent[]
-}
-
-model AlertEvent {
-  id        Int      @id @default(autoincrement())
-  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
-  alertId   Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  product   Product? @relation(fields: [erpNumber], references: [erpNumber], onDelete: SetNull)
   erpNumber String?
   title     String
   message   String
+  emailed   Boolean  @default(false)
+  whatsapp  Boolean  @default(false)
   createdAt DateTime @default(now())
-  delivered Boolean @default(false)
+
+  @@index([userId, createdAt])
 }
 
 model CrawlRun {
-  id        Int      @id @default(autoincrement())
-  startedAt DateTime @default(now())
-  finishedAt DateTime?
-  source    String
-  countries Int
-  newItems  Int      @default(0)
-  priceChanges Int   @default(0)
-  errors    Int      @default(0)
-  notes     String?
+  id           Int       @id @default(autoincrement())
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  source       String
+  countries    Int
+  newItems     Int       @default(0)
+  priceChanges Int       @default(0)
+  errors       Int       @default(0)
+  notes        String?
 }

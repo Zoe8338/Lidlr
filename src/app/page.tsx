@@ -31,7 +31,7 @@ export default async function Home() {
           Lidlr crawls Lidl&apos;s online shops every week for the brands you care about: Parkside &amp; Parkside
           Performance, Esmara &amp; Esmara Men, Crivit, Livery/Livergy, Cien, SilverCrest (Personal Care and Kitchen
           Tools), Dentalux and all things Livarno. Compare per-country prices, browse current promotions and new
-          arrivals, and get alerts when something gets cheaper, comes back in stock, or appears in your country.
+          arrivals, and get notified when a tracked product gets cheaper, comes back in stock, or goes on sale.
         </p>
       </div>
 
@@ -92,7 +92,7 @@ export default async function Home() {
       <p className="notice" style={{ marginTop: 30 }}>
         {lastRun
           ? `Crawl in progress (${new Date(lastRun.startedAt).toLocaleString()}).`
-          : "Alerts can target a price ceiling, stock status, or any new item for a brand — see Alerts."}
+          : "Create a free account and track products — we'll email or WhatsApp you on price drops, restocks and sales."}
       </p>
     </div>
   );
