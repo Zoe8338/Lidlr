@@ -9,6 +9,11 @@ import { sendLoginCode } from "@/lib/mail";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+function safeNext(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
+}
+
 export async function requestLogin(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
   if (!EMAIL_RE.test(email)) throw new Error("Valid email required");
@@ -18,19 +23,63 @@ export async function requestLogin(formData: FormData) {
     const jar = await cookies();
     jar.set("lidlr_devcode", code, { httpOnly: true, sameSite: "lax", maxAge: 900, path: "/" });
   }
-  redirect(`/login/verify?email=${encodeURIComponent(email)}`);
+  const next = safeNext(String(formData.get("next") || ""));
+  redirect(
+    `/login/verify?email=${encodeURIComponent(email)}${next ? `&next=${encodeURIComponent(next)}` : ""}`,
+  );
 }
 
 export async function confirmLogin(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const code = String(formData.get("code") || "");
+  const next = safeNext(String(formData.get("next") || ""));
   if (!EMAIL_RE.test(email) || !code) throw new Error("Email and code required");
   const userId = await verifyLoginCode(email, code);
   if (!userId) throw new Error("Invalid or expired code — request a new one");
   const jar = await cookies();
   jar.delete("lidlr_devcode");
   await startSession(userId);
-  redirect("/alerts");
+  redirect(next ?? "/alerts");
+}
+
+function triState(raw: string): boolean | null {
+  if (raw === "yes") return true;
+  if (raw === "no") return false;
+  return null;
+}
+
+export async function saveTracking(formData: FormData) {
+  const user = await currentUser();
+  if (!user) throw new Error("Sign in required");
+  const erp = String(formData.get("erp") || "");
+  const product = await prisma.product.findUnique({ where: { erpNumber: erp }, select: { erpNumber: true } });
+  if (!product) throw new Error("Unknown product");
+  const ccRaw = String(formData.get("countryCode") || "").trim().toUpperCase();
+  const countryCode = /^[A-Z]{2}$/.test(ccRaw) ? ccRaw : null;
+  const rawPrice = String(formData.get("maxPrice") || "").trim();
+  const maxPrice = rawPrice === "" ? null : Number(rawPrice.replace(",", "."));
+  if (maxPrice != null && (!Number.isFinite(maxPrice) || maxPrice < 0)) throw new Error("Invalid price");
+  const offerOnly = triState(String(formData.get("offer") || "any"));
+  const onlineOnly = triState(String(formData.get("online") || "any"));
+  const notifyEmail = formData.get("notifyEmail") === "on" || formData.get("notifyEmail") === "1";
+  const notifyWhatsapp = formData.get("notifyWhatsapp") === "on" || formData.get("notifyWhatsapp") === "1";
+  await prisma.tracking.upsert({
+    where: { userId_erpNumber: { userId: user.id, erpNumber: erp } },
+    update: { countryCode, maxPrice, offerOnly, onlineOnly, notifyEmail, notifyWhatsapp },
+    create: {
+      userId: user.id,
+      erpNumber: erp,
+      countryCode,
+      maxPrice,
+      offerOnly,
+      onlineOnly,
+      notifyEmail,
+      notifyWhatsapp,
+    },
+  });
+  revalidatePath("/alerts");
+  revalidatePath(`/products/${erp}`);
+  return { ok: true };
 }
 
 export async function logout() {

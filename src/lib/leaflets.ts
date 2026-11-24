@@ -110,6 +110,108 @@ async function storePdf(
   }
 }
 
+type FlyerProduct = {
+  offerKey?: string;
+  productId?: string;
+  title?: string;
+  brand?: string;
+  price?: string | number;
+  currencyText?: string;
+  currencySymbol?: string;
+  image?: string;
+  canonicalUrl?: string;
+};
+
+async function fetchFlyerProducts(flyerId: string): Promise<FlyerProduct[] | null> {
+  const raw = await fetchText(`${FLYER_API}?flyer_identifier=${flyerId}&include=products`);
+  if (!raw) return null;
+  try {
+    const flyer = (JSON.parse(raw).flyer ?? {}) as { products?: Record<string, FlyerProduct> };
+    return flyer.products ? Object.entries(flyer.products).map(([key, p]) => ({ ...p, offerKey: key } as FlyerProduct)) : [];
+  } catch {
+    return null;
+  }
+}
+
+async function storeOffers(leafletId: number, flyerId: string, host: string, products: FlyerProduct[]): Promise<number> {
+  const rows = products
+    .filter((p) => typeof p.offerKey === "string" && p.title)
+    .map((p) => ({
+      offerKey: `${flyerId}:${p.offerKey}`,
+      erpNumber: p.productId ? String(p.productId) : null,
+      title: String(p.title).slice(0, 300),
+      brand: p.brand ? String(p.brand).slice(0, 120) : null,
+      price: p.price != null && p.price !== "" ? Number(p.price) : null,
+      currency: p.currencyText ?? p.currencySymbol ?? null,
+      imageUrl: p.image ?? null,
+      url: p.canonicalUrl ? `https://${host}${p.canonicalUrl}` : null,
+    }))
+    .filter((r) => r.price == null || Number.isFinite(r.price));
+
+  await prisma.$transaction([
+    prisma.leafletOffer.deleteMany({ where: { leaflet: { flyerId } } }),
+    ...(rows.length ? [prisma.leafletOffer.createMany({ data: rows.map((r) => ({ ...r, leafletId })) })] : []),
+  ]);
+  return rows.length;
+}
+
+// Fire "in the leaflet" notifications for tracked products that appear in a
+// current or upcoming leaflet (ParkPrice-style in-store sale alert).
+export async function evaluateLeafletOffers(): Promise<number> {
+  const upcoming = await prisma.leaflet.findMany({
+    where: { OR: [{ validUntil: { gte: new Date() } }, { validUntil: null }], offers: { some: {} } },
+  });
+  if (!upcoming.length) return 0;
+  const trackings = await prisma.tracking.findMany({ include: { product: true } });
+  if (!trackings.length) return 0;
+  const byErp = new Map<string, typeof trackings>();
+  for (const t of trackings) {
+    const list = byErp.get(t.erpNumber) ?? [];
+    list.push(t);
+    byErp.set(t.erpNumber, list);
+  }
+
+  let created = 0;
+  for (const lf of upcoming) {
+    const erps = [...byErp.keys()];
+    if (!erps.length) return created;
+    const offers = await prisma.leafletOffer.findMany({
+      where: { leafletId: lf.id, erpNumber: { in: erps } },
+    });
+    for (const offer of offers) {
+      for (const t of byErp.get(offer.erpNumber ?? "") ?? []) {
+        if (t.countryCode && t.countryCode !== lf.countryCode) continue;
+        const when = lf.validFrom ? new Date(lf.validFrom).toLocaleDateString() : "now";
+        const priceTxt = offer.price != null ? ` at ${offer.price.toFixed(2)} ${offer.currency ?? ""}`.trimEnd() : "";
+        const message = `In the leaflet "${lf.name}" (from ${when}) in ${lf.countryCode}: ${offer.title}${priceTxt}`;
+        const dupe = await prisma.notification.findFirst({
+          where: {
+            userId: t.userId,
+            erpNumber: offer.erpNumber,
+            message,
+            createdAt: { gt: new Date(Date.now() - 7 * 86400000) },
+          },
+          select: { id: true },
+        });
+        if (dupe) continue;
+        await prisma.notification.create({
+          data: {
+            userId: t.userId,
+            erpNumber: offer.erpNumber,
+            title: offer.title.slice(0, 200),
+            message,
+            viaEmail: t.notifyEmail,
+            viaWhatsapp: t.notifyWhatsapp,
+          },
+        });
+        created++;
+        if (created >= 200) return created;
+      }
+    }
+  }
+  return created;
+}
+
 export type LeafletSummary = {
   countries: number;
   found: number;
@@ -187,11 +289,19 @@ export async function fetchLeaflets(
           ...(dl.stored ? { pdfStored: true, archivedAt: new Date() } : {}),
         };
 
-        await prisma.leaflet.upsert({
+        const stored = await prisma.leaflet.upsert({
           where: { flyerId: card.flyerId },
           update: { ...row, fetchedAt: new Date() },
           create: { countryCode: cc.code, flyerId: card.flyerId, ...row },
         });
+
+        const products = await fetchFlyerProducts(card.flyerId);
+        if (products && products.length) {
+          try {
+            await storeOffers(stored.id, card.flyerId, cc.host, products);
+          } catch {}
+        }
+        await sleep(DELAY_MS);
       } catch {
         errors++;
       }

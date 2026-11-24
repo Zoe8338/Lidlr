@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cookies } from "next/headers";
-import { prisma } from "./db";
+import { prisma } from "./db.ts";
 
 const COOKIE = "lidlr_session";
 const SESSION_DAYS = 30;

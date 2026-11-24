@@ -30,7 +30,7 @@ export async function deliverPendingNotifications(): Promise<{ sent: number; fai
   for (const n of events) {
     const delivery: Delivery = { emailed: false, whatsapp: false };
     const link = n.erpNumber ? `${siteUrl()}/products/${n.erpNumber}` : siteUrl();
-    if (n.user.notifyEmail) {
+    if (n.viaEmail) {
       delivery.emailed = await sendMail(
         n.user.email,
         `Lidlr · ${n.title.slice(0, 60)}`,
@@ -38,7 +38,7 @@ export async function deliverPendingNotifications(): Promise<{ sent: number; fai
         notifHtml(n.title, n.message, link),
       );
     }
-    if (n.user.notifyWhatsapp && n.user.whatsappPhone && n.user.whatsappKey) {
+    if (n.viaWhatsapp && n.user.notifyWhatsapp && n.user.whatsappPhone && n.user.whatsappKey) {
       delivery.whatsapp = await sendWhatsapp(
         n.user.whatsappPhone,
         n.user.whatsappKey,
@@ -47,7 +47,7 @@ export async function deliverPendingNotifications(): Promise<{ sent: number; fai
     }
     await prisma.notification.update({
       where: { id: n.id },
-      data: { emailed: n.user.notifyEmail ? delivery.emailed : true, whatsapp: delivery.whatsapp },
+      data: { emailed: n.viaEmail ? delivery.emailed : true, whatsapp: delivery.whatsapp },
     });
     if (delivery.emailed || delivery.whatsapp) sent++;
     else failed++;

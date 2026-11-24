@@ -4,9 +4,10 @@ import { confirmLogin, requestLogin } from "@/app/actions";
 
 export const metadata = { title: "Enter code — Lidlr" };
 
-export default async function VerifyPage({ searchParams }: { searchParams: Promise<{ email?: string }> }) {
+export default async function VerifyPage({ searchParams }: { searchParams: Promise<{ email?: string; next?: string }> }) {
   const sp = await searchParams;
   const email = sp.email ?? "";
+  const next = sp.next && sp.next.startsWith("/") && !sp.next.startsWith("//") ? sp.next : "";
   const jar = await cookies();
   const devcode = jar.get("lidlr_devcode")?.value;
 
@@ -26,6 +27,7 @@ export default async function VerifyPage({ searchParams }: { searchParams: Promi
 
       <form action={confirmLogin} className="inline" style={{ display: "grid", gap: 10, maxWidth: 420 }}>
         <input type="hidden" name="email" value={email} />
+        <input type="hidden" name="next" value={next} />
         <input
           name="code"
           required
@@ -42,6 +44,7 @@ export default async function VerifyPage({ searchParams }: { searchParams: Promi
         <span>Didn&apos;t get it?</span>
         <form action={requestLogin} style={{ display: "inline" }}>
           <input type="hidden" name="email" value={email} />
+          <input type="hidden" name="next" value={next} />
           <button className="button ghost" type="submit">
             Send a new code
           </button>

@@ -246,3 +246,101 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 [data-theme="dark"] table.prices tr.best td { background: #16281e; color: var(--green); }
 [data-theme="dark"] .button.danger { border-color: #4a2a2e; }
 [data-theme="dark"] .cookie-banner { box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6); }
+
+/* Tracking popup (ParkPrice-style) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 20, 30, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.modal-card {
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 60px rgba(10, 20, 40, 0.35);
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+.modal-close:hover { background: var(--surface2); color: var(--text); }
+.modal-sub {
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field {
+  display: block;
+  margin: 0 0 12px;
+  border: none;
+  padding: 0;
+}
+.field > span, .field > legend {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.field select,
+.field input[type="text"],
+.field input[type="email"],
+.field input:not([type]) {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.field-grid .field:first-child { grid-column: 1 / -1; }
+.check { display: flex; gap: 8px; align-items: center; margin: 6px 0; font-size: 14px; }
+.modal-hint { color: var(--muted); font-size: 12.5px; margin: 8px 0 12px; }
+.modal-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.form-error { color: var(--red); font-size: 13px; margin: 8px 0; }
+.chart-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.chart-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.chart-key i { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+[data-theme="dark"] .modal-card { box-shadow: 0 20px 70px rgba(0, 0, 0, 0.7); }
+[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, 0.7); }
+[data-theme="dark"] .field select,
+[data-theme="dark"] .field input:not([type]) { background: var(--surface2); border-color: var(--border); }

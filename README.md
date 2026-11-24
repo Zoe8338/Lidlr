@@ -132,12 +132,13 @@ npm run crawl -- --countries=DE,FR,ES --brands=parkside,livarno --max=200
 ```
 
 Flags: `--countries=DE,FR,ES`, `--brands=parkside,crivit,livarno`, `--max=200` (max items per brand query per
-country), `--notify` (also evaluate tracked products and deliver notifications afterwards).
+country), `--notify` (also evaluate tracked products and deliver notifications afterwards),
+`--leaflets` (also archive the countries' leaflets + their extracted offers).
 
 Fetch the leaflet archive (PDFs into `data/leaflets/`):
 
 ```bash
-npm run leaflets -- --countries=DE,PT   # add --nopdf for covers/metadata only
+npm run leaflets -- --countries=DE,PT   # add --nopdf for covers/metadata only, --notify to alert leaflet matches
 ```
 
 Trigger programmatically:
@@ -157,7 +158,7 @@ curl -X POST http://localhost:3000/api/crawl \
 |---|---|
 | `/` | Overview: tracked counts, brand families, latest deals, new arrivals |
 | `/products` | Search + filter by brand family, country, price sort |
-| `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, price-history chart, Track button |
+| `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, multi-country price-history chart, tracking popup (ParkPrice-style, editable) |
 | `/deals` | Current promotions (deal of the day, flash sales, promo ribbons, old→new price drops) |
 | `/new` | Items first seen within the last 7/14/30/90 days |
 | `/archive` | Weekly leaflet (flyer) archive per country: covers, validity dates and stored PDFs |
@@ -166,14 +167,19 @@ curl -X POST http://localhost:3000/api/crawl \
 
 ## Tracking & notifications
 
-Tracking is ParkPrice-style: one click on a product, then every crawl that
-changes something fires a notification. Signals detected by comparing the two
+Tracking is ParkPrice-style: click **Track this product** on a product page, and a popup
+(like ParkPrice's) lets you narrow the watch: **country** (or any), **Price ≤** target, **on
+offer** (unknown / yes / no), **online-only** (unknown / yes / no) and which channels to notify
+(email / WhatsApp). Tracking is editable any time from the same popup, and tracked products are
+listed on `/alerts`. Signals detected by comparing the two
 newest snapshots of each country listing:
 
 - **price drop** — newest price is lower than the previous one
 - **restock** — availability flips from out-of-stock to in-stock (this is what Lidl's public
   data exposes; per-store shelf stock is only inside the Lidl Plus app and is not crawled)
 - **on sale** — a new promotion ribbon appears (deal of the day, flash sale, % discount, …)
+- **in leaflet** — your product turns up in a current or upcoming country leaflet (ParkPrice's
+  "in store" alert)
 
 Delivery:
 
@@ -209,6 +215,15 @@ snapshots them into an **archive**:
 
 PDFs live in the `lidlr-data` volume (~5–20 MB per leaflet), so they survive updates; set
 `ARCHIVE_LEAFLET_PDF=0` if you only want the covers and metadata.
+
+### Leaflet offers
+
+Where Lidl publishes structured product data for a flyer, Lidlr also extracts **each individual
+offer** via the same flyer API (`include=products`): title, brand, price, currency and image, and
+links it to your catalog through the offer's ERP number. Offer data availability is decided by
+Lidl per country (currently rich in e.g. DE / FR / NL, empty in others). Tracked products that
+appear in a **current or upcoming** leaflet fire an in-leaflet notification (7-day dedupe, same
+caps), so you know your item is in this week's paper before you walk in.
 
 ## Crawler mechanics (`src/lib/lidl/`)
 

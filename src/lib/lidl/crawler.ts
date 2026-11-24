@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { BRANDS, COUNTRIES, slugifyBrand, type CountryConfig } from "./catalog.ts";
 import { brandItems, type LidlItem } from "./client.ts";
-import { translateTitle, translationEnabled } from "../translate.ts";
+import { translateTitles, translationEnabled } from "../translate.ts";
 
 const prisma = new PrismaClient();
 
@@ -40,7 +40,7 @@ async function ensureCountries() {
   }
 }
 
-async function upsertItem(item: LidlItem, cc: CountryConfig): Promise<{ isNew: boolean; priceChanged: boolean }> {
+async function upsertItem(item: LidlItem, cc: CountryConfig, translations: Map<string, string | null>): Promise<{ isNew: boolean; priceChanged: boolean }> {
   const brandSlug = slugifyBrand(item.brandName);
   const now = new Date();
 
@@ -54,7 +54,9 @@ async function upsertItem(item: LidlItem, cc: CountryConfig): Promise<{ isNew: b
     ...(item.images?.length ? { images: JSON.stringify(item.images.slice(0, 4)) } : {}),
   };
   const titleEn =
-    translationEnabled() && !existingProduct?.titleEn ? await translateTitle(item.title) : existingProduct?.titleEn ?? null;
+    translationEnabled() && !existingProduct?.titleEn
+      ? translations.get(item.title.trim()) ?? null
+      : existingProduct?.titleEn ?? null;
 
   await prisma.product.upsert({
     where: { erpNumber: item.erpNumber },
@@ -121,7 +123,8 @@ const MAX_NOTIFS_PER_RUN = 200;
 
 // ParkPrice-style evaluation: for every tracked product, compare the two
 // newest snapshots of each country listing and emit signals on
-// price drops, restocks and new promo ribbons.
+// price drops, restocks and new promo ribbons, applying the per-track
+// filters set in the tracking popup (country / price ≤ / offer / online).
 export async function evaluateTrackings(): Promise<number> {
   const trackings = await prisma.tracking.findMany({ include: { product: { include: { listings: true } } } });
   if (!trackings.length) return 0;
@@ -132,6 +135,8 @@ export async function evaluateTrackings(): Promise<number> {
   for (const t of trackings) {
     const p = t.product;
     for (const listing of p.listings) {
+      if (t.countryCode && listing.countryCode !== t.countryCode) continue;
+      if (t.onlineOnly != null && (listing.online ?? false) !== t.onlineOnly) continue;
       const snaps = await prisma.snapshot.findMany({
         where: { listingId: listing.id },
         orderBy: { takenAt: "desc" },
@@ -180,6 +185,8 @@ export async function evaluateTrackings(): Promise<number> {
         };
       }
       if (!signal) continue;
+      if (t.offerOnly === true && !nowSn.promo) continue;
+      if (t.offerOnly === false && nowSn.promo) continue;
 
       const dupe = await prisma.notification.findFirst({
         where: {
@@ -194,7 +201,14 @@ export async function evaluateTrackings(): Promise<number> {
       if (seenSignals.has(sigKey)) continue;
 
       await prisma.notification.create({
-        data: { userId: t.userId, erpNumber: t.erpNumber, title: signal.title, message: signal.message },
+        data: {
+          userId: t.userId,
+          erpNumber: t.erpNumber,
+          title: signal.title,
+          message: signal.message,
+          viaEmail: t.notifyEmail,
+          viaWhatsapp: t.notifyWhatsapp,
+        },
       });
       seenSignals.add(sigKey);
       created++;
@@ -222,6 +236,7 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
 
   for (const cc of countriesToCrawl) {
     countries++;
+    const countryItems: LidlItem[] = [];
     for (const brand of brandsToCrawl) {
       try {
         const maxItems = opts.maxItemsPerBrand ?? 1000;
@@ -232,15 +247,30 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
             if (seen.has(key)) continue;
             seen.add(key);
             items++;
-            const r = await upsertItem(item, cc);
-            if (r.isNew) newItems++;
-            if (r.priceChanged) priceChanges++;
+            countryItems.push(item);
           }
         }
       } catch {
         errors++;
       }
     }
+
+    if (countryItems.length) {
+      const erps = countryItems.map((i) => i.erpNumber);
+      const withEn = await prisma.product.findMany({
+        where: { erpNumber: { in: erps }, titleEn: { not: null } },
+        select: { erpNumber: true },
+      });
+      const haveEn = new Set(withEn.map((p) => p.erpNumber));
+      const pending = countryItems.filter((i) => !haveEn.has(i.erpNumber)).map((i) => i.title);
+      const translations = await translateTitles(pending);
+      for (const item of countryItems) {
+        const r = await upsertItem(item, cc, translations);
+        if (r.isNew) newItems++;
+        if (r.priceChanged) priceChanges++;
+      }
+    }
+
     await sleep(DELAY_MS);
   }
 

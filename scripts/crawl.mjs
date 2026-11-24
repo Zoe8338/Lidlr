@@ -1,5 +1,6 @@
 import { runCrawl, evaluateTrackings } from "../src/lib/lidl/crawler.ts";
 import { deliverPendingNotifications } from "../src/lib/notify.ts";
+import { fetchLeaflets, evaluateLeafletOffers } from "../src/lib/leaflets.ts";
 
 const args = Object.fromEntries(
   process.argv.slice(2).filter((a) => a.startsWith("--")).map((a) => {
@@ -18,5 +19,14 @@ if (args.notify) {
   const notifications = await evaluateTrackings();
   const delivery = await deliverPendingNotifications();
   console.log("NOTIFICATIONS", { created: notifications, ...delivery });
+}
+if (args.leaflets) {
+  const leaflets = await fetchLeaflets({ countries, downloadPdf: !args.nopdf });
+  console.log("LEAFLET SUMMARY", JSON.stringify(leaflets));
+  if (args.notify) {
+    const n = await evaluateLeafletOffers();
+    console.log("LEAFLET NOTIFICATIONS", n);
+    await deliverPendingNotifications();
+  }
 }
 process.exit(0);

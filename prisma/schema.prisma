@@ -102,37 +102,45 @@ model LoginToken {
 }
 
 model Tracking {
-  id        Int      @id @default(autoincrement())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  product   Product  @relation(fields: [erpNumber], references: [erpNumber], onDelete: Cascade)
-  erpNumber String
-  maxPrice  Float?
-  createdAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         Int
+  product        Product  @relation(fields: [erpNumber], references: [erpNumber], onDelete: Cascade)
+  erpNumber      String
+  countryCode    String?
+  maxPrice       Float?
+  offerOnly      Boolean?
+  onlineOnly     Boolean?
+  notifyEmail    Boolean  @default(true)
+  notifyWhatsapp Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
   @@unique([userId, erpNumber])
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  product   Product? @relation(fields: [erpNumber], references: [erpNumber], onDelete: SetNull)
-  erpNumber String?
-  title     String
-  message   String
-  emailed   Boolean  @default(false)
-  whatsapp  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int
+  product      Product? @relation(fields: [erpNumber], references: [erpNumber], onDelete: SetNull)
+  erpNumber    String?
+  title        String
+  message      String
+  viaEmail     Boolean  @default(true)
+  viaWhatsapp  Boolean  @default(false)
+  emailed      Boolean  @default(false)
+  whatsapp     Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([erpNumber, message])
 }
 
 // One row per archived Lidl leaflet (weekly flyer) per country
 model Leaflet {
-  id          Int       @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   countryCode String
-  flyerId     String    @unique
+  flyerId     String         @unique
   name        String
   title       String?
   validFrom   DateTime?
@@ -143,11 +151,30 @@ model Leaflet {
   pages       Int?
   sizeBytes   Int?
   sha256      String?
-  pdfStored   Boolean   @default(false)
+  pdfStored   Boolean        @default(false)
   archivedAt  DateTime?
-  fetchedAt   DateTime  @default(now())
+  fetchedAt   DateTime       @default(now())
+  offers      LeafletOffer[]
 
   @@index([countryCode, validFrom])
+}
+
+// One offer tile from a leaflet (from Lidl's flyer JSON API)
+model LeafletOffer {
+  id        Int      @id @default(autoincrement())
+  leaflet   Leaflet  @relation(fields: [leafletId], references: [id], onDelete: Cascade)
+  leafletId Int
+  offerKey  String   @unique
+  erpNumber String?
+  title     String
+  brand     String?
+  price     Float?
+  currency  String?
+  imageUrl  String?
+  url       String?
+
+  @@index([leafletId])
+  @@index([erpNumber])
 }
 
 model CrawlRun {

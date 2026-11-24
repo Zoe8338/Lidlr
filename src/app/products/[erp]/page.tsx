@@ -1,12 +1,12 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth";
 import { COUNTRIES } from "@/lib/lidl/catalog";
 import { PriceChart } from "@/components/PriceChart";
 import { Gallery } from "@/components/Gallery";
-import { toggleTrack } from "@/app/actions";
+import { TrackDialog } from "@/components/TrackDialog";
 import { convert, getFxRates } from "@/lib/fx";
+import { emailConfigured } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,13 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
     list.push({ t: s.takenAt, price: s.price! });
     historyByCountry.set(s.countryCode, list);
   }
-  const chartPoints = (historyByCountry.get(best?.countryCode ?? "") ?? snapshots.map((s) => ({ t: s.takenAt, price: s.price! })));
+  const palette = ["#0e62c4", "#d97706", "#178a3e", "#8b5cf6", "#d43f3f", "#0891b2"];
+  const chartSeries = [...historyByCountry.entries()]
+    .filter(([, pts]) => pts.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, palette.length)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([cc, pts], i) => ({ cc, color: palette[i % palette.length], points: pts.slice(-120) }));
   const fx = await getFxRates();
 
   return (
@@ -62,18 +68,28 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
             {product.brandName} · ERP {product.erpNumber} · first seen {new Date(product.firstSeen).toLocaleDateString()}
           </p>
           <div style={{ margin: "10px 0", display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {user ? (
-              <form action={toggleTrack}>
-                <input type="hidden" name="erp" value={erp} />
-                <button className={tracked ? "button danger" : "button"} type="submit">
-                  {tracked ? "✓ Tracked — stop tracking" : "Track this product"}
-                </button>
-              </form>
-            ) : (
-              <Link className="button" href="/login">
-                Track this product
-              </Link>
-            )}
+            <TrackDialog
+              erp={erp}
+              productTitle={product.title}
+              countries={COUNTRIES.filter((c) => c.enabled).map((c) => ({ code: c.code, name: c.name }))}
+              signedIn={!!user}
+              whatsappReady={!!user?.notifyWhatsapp &&
+                !!user?.whatsappPhone &&
+                !!user?.whatsappKey}
+              emailReady={emailConfigured()}
+              existing={
+                tracked
+                  ? {
+                      countryCode: tracked.countryCode,
+                      maxPrice: tracked.maxPrice,
+                      offerOnly: tracked.offerOnly,
+                      onlineOnly: tracked.onlineOnly,
+                      notifyEmail: tracked.notifyEmail,
+                      notifyWhatsapp: tracked.notifyWhatsapp,
+                    }
+                  : null
+              }
+            />
           </div>
         </div>
       </div>
@@ -131,17 +147,8 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
         </tbody>
       </table>
 
-      <h2 className="section">Price history {best ? `— ${best.countryCode}` : ""}</h2>
-      <PriceChart points={chartPoints.slice(-60)} />
-      {historyByCountry.size > 1 ? (
-        <div className="toolbar" style={{ marginTop: 12 }}>
-          {[...historyByCountry.keys()].map((cc) => (
-            <span key={cc} className="badge">
-              {cc}: {historyByCountry.get(cc)!.length} snapshots
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <h2 className="section">Price history by country</h2>
+      <PriceChart series={chartSeries} />
     </div>
   );
 }
