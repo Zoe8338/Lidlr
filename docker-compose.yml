@@ -1,0 +1,25 @@
+# One-command on-prem deploy:  docker compose up -d --build
+# Then open http://localhost:3000
+services:
+  lidlr:
+    build: .
+    container_name: lidlr
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - lidlr-data:/app/data
+    environment:
+      DATABASE_URL: file:/app/data/lidlr.db
+      # Weekly full crawl + daily alert checks run inside the container by default.
+      # Set to "1" to disable the scheduler and drive crawls yourself.
+      SCHEDULER_DISABLED: ""
+      # Optional email delivery for alerts:
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      ALERT_FROM_EMAIL: "${ALERT_FROM_EMAIL:-lidlr@example.com}"
+      SITE_URL: "${SITE_URL:-http://localhost:3000}"
+      # Protects POST /api/crawl when set:
+      CRAWL_SECRET: "${CRAWL_SECRET:-}"
+
+volumes:
+  lidlr-data:

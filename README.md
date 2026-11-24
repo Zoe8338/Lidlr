@@ -19,6 +19,33 @@ politeness delay in place, and don't hammer the shops.
   no private APIs, no scraping of disallowed paths (robots.txt is respected; search HTML pages are never hit)
 - Built-in scheduler (in-process): weekly full crawl + daily alert evaluation, no cron dependency
 
+## One-command on-prem deploy (Docker)
+
+```bash
+docker compose up -d --build
+```
+
+That's it: builds the image, syncs the SQLite schema, starts the app on
+http://localhost:3000 with the weekly crawl + daily alert scheduler running, and
+keeps the database in the `lidlr-data` volume (survives rebuilds and restarts).
+
+Seed some data from the container:
+
+```bash
+docker compose exec lidlr npm run crawl -- --countries=DE,FR --max=200
+```
+
+Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
+shell file format): `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `SITE_URL`,
+`CRAWL_SECRET`, `SCHEDULER_DISABLED`.
+
+Without Docker Compose (e.g. on a NAS or single Docker host):
+
+```bash
+docker build -t lidlr .
+docker run -d --name lidlr -p 3000:3000 -v lidlr-data:/app/data --restart unless-stopped lidlr
+```
+
 ## Setup
 
 ```bash
