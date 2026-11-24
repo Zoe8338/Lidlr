@@ -197,6 +197,10 @@ single crawl run creates at most 200 notifications.
 
 ## Leaflet archive (`/archive`)
 
+The archive is browsable: `/archive` shows a **card per country**; each country page (`/archive/DE`) lists
+**years with months as bullets**; clicking a month shows that month's weekly leaflets (cover, validity,
+archived PDF, original). Leaflets spanning a month boundary appear under both months.
+
 Every week each Lidl country site publishes national leaflets (folder / prospekt / folleto / volantino). Lidlr
 snapshots them into an **archive**:
 

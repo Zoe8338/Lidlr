@@ -344,3 +344,47 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 [data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, 0.7); }
 [data-theme="dark"] .field select,
 [data-theme="dark"] .field input:not([type]) { background: var(--surface2); border-color: var(--border); }
+
+/* Archive browser: countries -> years/months -> leaflets */
+.country-card { display: block; color: var(--text); }
+.country-card:hover { text-decoration: none; border-color: var(--accent); }
+.country-card .badge { font-size: 11px; margin-left: 4px; }
+.archive-layout { display: flex; gap: 24px; align-items: flex-start; margin-top: 8px; }
+.archive-nav {
+  flex: 0 0 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  position: sticky;
+  top: 74px;
+  max-height: calc(100vh - 90px);
+  overflow: auto;
+}
+.archive-year-label { font-weight: 800; font-size: 15px; margin: 8px 0 4px; }
+.archive-year:first-child .archive-year-label { margin-top: 0; }
+.archive-months { list-style: disc; margin: 0; padding-left: 20px; }
+.archive-months li { margin: 3px 0; }
+.archive-months a {
+  color: var(--muted);
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.archive-months a:hover { color: var(--text); text-decoration: none; }
+.archive-months a.active { color: var(--accent); font-weight: 700; }
+.archive-months .count {
+  background: var(--surface2);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 1px 7px;
+  color: var(--muted);
+}
+.archive-content { flex: 1; min-width: 0; }
+@media (max-width: 720px) {
+  .archive-layout { flex-direction: column; }
+  .archive-nav { position: static; flex: 1 1 auto; width: 100%; }
+}
+[data-theme="dark"] .country-card { color: var(--text); }
+[data-theme="dark"] .archive-nav { background: var(--surface2); }
