@@ -21,9 +21,10 @@ export default function LoginPage() {
 
       {!emailConfigured() ? (
         <p className="notice" style={{ marginTop: 16 }}>
-          <strong>Server note:</strong> <code>RESEND_API_KEY</code> is not configured, so login codes are delivered
+          <strong>Server note:</strong> no email provider is configured (SMTP or Resend), so login codes are delivered
           in-place on the next screen instead of by email. This works for local testing but is not private — set{" "}
-          <code>RESEND_API_KEY</code> for real use. Already have a code? <Link href="/login/verify">Enter it here</Link>.
+          <code>SMTP_HOST</code> or <code>RESEND_API_KEY</code> for real use. Already have a code?{" "}
+          <Link href="/login/verify">Enter it here</Link>.
         </p>
       ) : null}
     </div>

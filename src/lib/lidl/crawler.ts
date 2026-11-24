@@ -113,7 +113,7 @@ async function upsertItem(item: LidlItem, cc: CountryConfig): Promise<{ isNew: b
 export type TrackSignal = {
   erpNumber: string;
   title: string;
-  kind: "price_drop" | "restock" | "on_sale";
+  kind: "price_drop" | "restock" | "on_sale" | "target";
   message: string;
 };
 
@@ -140,8 +140,24 @@ export async function evaluateTrackings(): Promise<number> {
       if (snaps.length < 2) continue;
       const [nowSn, beforeSn] = snaps;
 
+      const target = t.maxPrice;
+
       let signal: TrackSignal | null = null;
-      if (nowSn.price != null && beforeSn.price != null && nowSn.price < beforeSn.price) {
+      if (
+        target != null &&
+        nowSn.price != null &&
+        nowSn.price <= target &&
+        (beforeSn.price == null || beforeSn.price > target)
+      ) {
+        signal = {
+          erpNumber: p.erpNumber,
+          title: p.titleEn || p.title,
+          kind: "target",
+          message: `Target price reached in ${listing.countryCode}: now ${nowSn.price.toFixed(2)} ${listing.currency ?? ""} (your target ≤ ${target})`,
+        };
+      } else if (target != null && nowSn.price != null && nowSn.price > target) {
+        signal = null;
+      } else if (nowSn.price != null && beforeSn.price != null && nowSn.price < beforeSn.price) {
         signal = {
           erpNumber: p.erpNumber,
           title: p.titleEn || p.title,

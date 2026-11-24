@@ -22,10 +22,16 @@ services:
       # Session signing secret. Leave empty to auto-generate and persist one
       # in the data volume, or set your own random string.
       AUTH_SECRET: "${AUTH_SECRET:-}"
-      # REQUIRED for passwordless login codes + email notifications:
-      # without it, login codes are shown in the UI (dev fallback only).
+      # Email for login codes + notifications: set SMTP_* (your own mail server)
+      # or RESEND_API_KEY (resend.com). With neither, codes are shown in the UI.
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_SECURE: "${SMTP_SECURE:-}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      MAIL_FROM: "${MAIL_FROM:-}"
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
-      ALERT_FROM_EMAIL: "${ALERT_FROM_EMAIL:-lidlr@example.com}"
+      ALERT_FROM_EMAIL: "${ALERT_FROM_EMAIL:-}"
       SITE_URL: "${SITE_URL:-http://localhost:3000}"
       # Protects POST /api/crawl and POST /api/leaflets when set:
       CRAWL_SECRET: "${CRAWL_SECRET:-}"

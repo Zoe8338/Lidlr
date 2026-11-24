@@ -107,6 +107,7 @@ model Tracking {
   userId    Int
   product   Product  @relation(fields: [erpNumber], references: [erpNumber], onDelete: Cascade)
   erpNumber String
+  maxPrice  Float?
   createdAt DateTime @default(now())
 
   @@unique([userId, erpNumber])

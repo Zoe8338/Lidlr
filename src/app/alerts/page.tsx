@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth";
 import { emailConfigured } from "@/lib/mail";
-import { toggleTrack, saveNotifSettings, deleteAccount } from "@/app/actions";
+import { toggleTrack, saveTarget, saveNotifSettings, deleteAccount } from "@/app/actions";
 import { ProductCard } from "@/components/ProductCard";
 
 export const dynamic = "force-dynamic";
@@ -38,13 +38,30 @@ export default async function TrackingPage() {
 
   const whatsappReady = !!user.whatsappPhone && !!user.whatsappKey;
 
+  const lows = tracked.length
+    ? await prisma.snapshot.groupBy({
+        by: ["erpNumber"],
+        _min: { price: true },
+        where: { erpNumber: { in: tracked.map((t) => t.erpNumber) }, price: { not: null } },
+      })
+    : [];
+  const lowByErp = new Map(lows.map((g) => [g.erpNumber, g._min.price]));
+  const bestByErp = new Map<string, { price: number; cc: string }>();
+  for (const t of tracked) {
+    const best = t.product.listings
+      .filter((l) => l.currentPrice != null)
+      .sort((a, b) => a.currentPrice! - b.currentPrice!)[0];
+    if (best) bestByErp.set(t.erpNumber, { price: best.currentPrice!, cc: best.countryCode });
+  }
+
   return (
     <div>
       <h1 style={{ margin: "24px 0 4px" }}>My tracking</h1>
       <p className="notice">
         You get a {emailConfigured() ? "email" : "notification"} whenever a tracked product{" "}
         <strong>drops in price</strong>, <strong>comes back in stock</strong>, or <strong>goes on sale</strong>{" "}
-        in any crawled country. Track more products from any{" "}
+        in any crawled country — ParkPrice-style. Optionally set a <strong>target price</strong> per product and
+        you&apos;ll only hear about it when the price falls to that level. Track more products from any{" "}
         <Link href="/products">product page</Link>.
       </p>
 
@@ -66,6 +83,28 @@ export default async function TrackingPage() {
                   <input type="hidden" name="erp" value={t.erpNumber} />
                   <button className="button danger" type="submit" title="Stop tracking">
                     ✕
+                  </button>
+                </form>
+                <div className="track-info">
+                  Tracked since {new Date(t.createdAt).toLocaleDateString()}
+                  {bestByErp.get(t.erpNumber)
+                    ? ` · best now ${bestByErp.get(t.erpNumber)!.price.toFixed(2)} (${bestByErp.get(t.erpNumber)!.cc})`
+                    : ""}
+                  {lowByErp.get(t.erpNumber) != null ? ` · lowest seen ${lowByErp.get(t.erpNumber)!.toFixed(2)}` : ""}
+                  {t.maxPrice != null ? ` · target ≤ ${t.maxPrice}` : ""}
+                </div>
+                <form action={saveTarget} className="target-form">
+                  <input type="hidden" name="erp" value={t.erpNumber} />
+                  <input
+                    name="maxPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    defaultValue={t.maxPrice ?? ""}
+                    placeholder="notify only if ≤ (any drop if empty)"
+                  />
+                  <button type="submit" className="button ghost">
+                    Save
                   </button>
                 </form>
               </div>

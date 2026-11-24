@@ -69,9 +69,12 @@ container and prunes the old image. The database and session secret live in the
   Tracking is ParkPrice-style: it watches for **price drops**, **restocks**
   (online-shop availability going back to true) and **new promotions**, and
   creates a notification when a crawl detects a change.
-- Notifications are delivered by **email** (Resend, `RESEND_API_KEY`) and/or
-  **WhatsApp** via the free [CallMeBot](https://www.callmebot.com/blog/free-api-for-whatsapp-messages/)
+- Notifications are delivered by **email** (your own SMTP server via `SMTP_HOST`,
+  or Resend with `RESEND_API_KEY` as fallback) and/or **WhatsApp** via the
+  free [CallMeBot](https://www.callmebot.com/blog/free-api-for-whatsapp-messages/)
   gateway (user pastes their number + personal key on the Tracking page).
+- ParkPrice-style **target price per product**: optional, means "notify only if
+  price < target" (ParkPrice's filter semantics). Empty = notify on any drop.
   Delivery is deduplicated (same message per product within 7 days is skipped).
 - Everything is managed on `/alerts`: tracked products, the notification feed
   with delivery status, notification settings, and a self-serve
@@ -104,7 +107,7 @@ Google-translate community endpoint — no key, no dependency. Translations are:
 Failures degrade silently — the original name is kept and retried next run.
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
-shell file format): `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `SITE_URL`,
+shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `RESEND_API_KEY`, `SITE_URL`,
 `CRAWL_SECRET`, `SCHEDULER_DISABLED`.
 
 Without Docker Compose (e.g. on a NAS or single Docker host):
@@ -174,8 +177,10 @@ newest snapshots of each country listing:
 
 Delivery:
 
-- **Email** via [Resend](https://resend.com): set `RESEND_API_KEY` (this is also required for the
-  login-code flow!) and `ALERT_FROM_EMAIL`, and `SITE_URL` for links in messages
+- **Email**: preferred is your **own SMTP server** — set `SMTP_HOST`, `SMTP_PORT`
+  (587), `SMTP_USER`, `SMTP_PASS`, `SECURE` (1 for port 465), `MAIL_FROM`
+  (Gmail: use an App Password). Without SMTP, Resend (`RESEND_API_KEY`) is used;
+  either provider also delivers the login codes. `SITE_URL` builds the links.
 - **WhatsApp** via the free [CallMeBot](https://www.callmebot.com/blog/free-api-for-whatsapp-messages/)
   gateway: each user gets their own key from the bot and enters it on the Tracking page
 - Without email configured, login codes are shown in the UI (dev fallback) and

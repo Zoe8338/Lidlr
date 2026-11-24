@@ -57,6 +57,22 @@ export async function toggleTrack(formData: FormData) {
   revalidatePath(`/products/${erp}`);
 }
 
+export async function saveTarget(formData: FormData) {
+  const user = await currentUser();
+  if (!user) throw new Error("Sign in required");
+  const erp = String(formData.get("erp") || "");
+  const raw = String(formData.get("maxPrice") || "").trim();
+  const maxPrice = raw === "" ? null : Number(raw.replace(",", "."));
+  if (maxPrice != null && (!Number.isFinite(maxPrice) || maxPrice < 0)) throw new Error("Invalid price");
+  const result = await prisma.tracking.updateMany({
+    where: { userId: user.id, erpNumber: erp },
+    data: { maxPrice },
+  });
+  if (result.count === 0) throw new Error("Not tracking this product");
+  revalidatePath("/alerts");
+  revalidatePath(`/products/${erp}`);
+}
+
 export async function saveNotifSettings(formData: FormData) {
   const user = await currentUser();
   if (!user) throw new Error("Sign in required");

@@ -1,6 +1,22 @@
-import { prisma } from "./db";
+import { prisma } from "./db.ts";
+import { sendMail } from "./mail.ts";
 import { siteUrl } from "./site.ts";
+
 type Delivery = { emailed: boolean; whatsapp: boolean };
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function notifHtml(title: string, message: string, link: string): string {
+  return `
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:480px">
+  <p style="margin:0 0 4px;font-weight:700;font-size:15px">${esc(title)}</p>
+  <p style="margin:0 0 16px;color:#445">${esc(message)}</p>
+  <a href="${link}" style="background:#0e62c4;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:700;display:inline-block">View on Lidlr</a>
+  <p style="margin-top:18px;font-size:12px;color:#8aa0b4">You get this because you track this product on ${siteUrl()}.</p>
+</div>`;
+}
 
 export async function deliverPendingNotifications(): Promise<{ sent: number; failed: number }> {
   const events = await prisma.notification.findMany({
@@ -13,11 +29,13 @@ export async function deliverPendingNotifications(): Promise<{ sent: number; fai
   let failed = 0;
   for (const n of events) {
     const delivery: Delivery = { emailed: false, whatsapp: false };
+    const link = n.erpNumber ? `${siteUrl()}/products/${n.erpNumber}` : siteUrl();
     if (n.user.notifyEmail) {
-      delivery.emailed = await sendEmail(
+      delivery.emailed = await sendMail(
         n.user.email,
         `Lidlr · ${n.title.slice(0, 60)}`,
-        `${n.message}\n${n.erpNumber ? `${siteUrl()}/products/${n.erpNumber}` : siteUrl()}`,
+        `${n.message}\n${link}`,
+        notifHtml(n.title, n.message, link),
       );
     }
     if (n.user.notifyWhatsapp && n.user.whatsappPhone && n.user.whatsappKey) {
@@ -35,21 +53,6 @@ export async function deliverPendingNotifications(): Promise<{ sent: number; fai
     else failed++;
   }
   return { sent, failed };
-}
-
-async function sendEmail(to: string, subject: string, text: string): Promise<boolean> {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return false;
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: process.env.ALERT_FROM_EMAIL || "lidlr@example.com", to, subject, text }),
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
 }
 
 // WhatsApp delivery via CallMeBot's free personal gateway.

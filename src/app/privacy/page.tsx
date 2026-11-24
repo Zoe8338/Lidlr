@@ -29,7 +29,7 @@ export default function PrivacyPage() {
         <li><strong>Lidl online shops</strong> — public data source (product titles, prices, stock badges, images).</li>
         <li><strong>translate.googleapis.com (community endpoint)</strong> — product titles are translated automatically for readability; no personal data is sent.</li>
         <li><strong>frankfurter.dev</strong> — European Central Bank exchange rates to show approximate EUR equivalents; no personal data is sent.</li>
-        <li><strong>Resend</strong> — email delivery of your login code and notifications (only your email address is passed).</li>
+        <li><strong>Email</strong> — login codes and notifications are delivered either through the operator's own SMTP mail server or via Resend; only your email address and the message are passed.</li>
         <li><strong>CallMeBot</strong> — WhatsApp delivery of notifications, only when you opt in (your number and message text are passed).</li>
         <li><strong>Hosting</strong> — where you deploy Lidlr (self-hosted) determines server logs; Lidlr itself adds no extra logging of visitors.</li>
       </ul>
