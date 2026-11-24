@@ -26,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/products">Products</Link>
               <Link href="/deals">Deals</Link>
               <Link href="/new">New items</Link>
+              <Link href="/archive">Archive</Link>
               <Link href="/alerts">Tracking</Link>
             </nav>
             <div className="spacer" />

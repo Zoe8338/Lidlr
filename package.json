@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
-    "crawl": "node scripts/crawl.mjs"
+    "crawl": "node scripts/crawl.mjs",
+    "leaflets": "node scripts/leaflets.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",

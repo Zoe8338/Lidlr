@@ -84,6 +84,12 @@ export async function deleteAccount() {
   redirect("/");
 }
 
+export async function fetchLeafletsAction() {
+  const { fetchLeaflets } = await import("@/lib/leaflets");
+  await fetchLeaflets();
+  revalidatePath("/archive");
+}
+
 export async function dismissCookies(formData: FormData) {
   const choice = String(formData.get("choice") || "all");
   const jar = await cookies();

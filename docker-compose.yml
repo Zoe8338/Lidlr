@@ -27,8 +27,15 @@ services:
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       ALERT_FROM_EMAIL: "${ALERT_FROM_EMAIL:-lidlr@example.com}"
       SITE_URL: "${SITE_URL:-http://localhost:3000}"
-      # Protects POST /api/crawl when set:
+      # Protects POST /api/crawl and POST /api/leaflets when set:
       CRAWL_SECRET: "${CRAWL_SECRET:-}"
+      # Leaflet archive: store PDF copies of each country's weekly flyer in the data volume
+      # (set to "0" to keep covers/metadata only).
+      ARCHIVE_LEAFLET_PDF: "${ARCHIVE_LEAFLET_PDF:-1}"
+      # Skip evergreen long-dated catalogs; only weekly-leaflets get archived
+      LEAFLET_MAX_VALIDITY_DAYS: "${LEAFLET_MAX_VALIDITY_DAYS:-45}"
+      # Refuse PDFs larger than this (MB)
+      LEAFLET_MAX_PDF_MB: "${LEAFLET_MAX_PDF_MB:-60}"
 
 volumes:
   lidlr-data:

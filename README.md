@@ -131,6 +131,12 @@ npm run crawl -- --countries=DE,FR,ES --brands=parkside,livarno --max=200
 Flags: `--countries=DE,FR,ES`, `--brands=parkside,crivit,livarno`, `--max=200` (max items per brand query per
 country), `--notify` (also evaluate tracked products and deliver notifications afterwards).
 
+Fetch the leaflet archive (PDFs into `data/leaflets/`):
+
+```bash
+npm run leaflets -- --countries=DE,PT   # add --nopdf for covers/metadata only
+```
+
 Trigger programmatically:
 
 ```bash
@@ -151,6 +157,7 @@ curl -X POST http://localhost:3000/api/crawl \
 | `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, price-history chart, Track button |
 | `/deals` | Current promotions (deal of the day, flash sales, promo ribbons, old→new price drops) |
 | `/new` | Items first seen within the last 7/14/30/90 days |
+| `/archive` | Weekly leaflet (flyer) archive per country: covers, validity dates and stored PDFs |
 | `/alerts` | Passwordless sign-in flow, tracked products, notification feed, email/WhatsApp settings |
 | `/privacy`, `/cookies`, `/terms` | Legal pages: privacy policy, cookie policy, terms of use |
 
@@ -176,6 +183,27 @@ Delivery:
 
 Cartesian dedupe: identical messages for the same product are suppressed for 7 days, and a
 single crawl run creates at most 200 notifications.
+
+## Leaflet archive (`/archive`)
+
+Every week each Lidl country site publishes national leaflets (folder / prospekt / folleto / volantino). Lidlr
+snapshots them into an **archive**:
+
+- Discovery uses Lidl's public leaflet widget API (`esi.leaflets.schwarz/overview`) + flyer JSON API
+  (`endpoints.leaflets.schwarz/v4/flyer`) — the same public endpoints the country sites themselves use.
+- For every leaflet it stores **name, validity dates, page count, cover image and viewer URL**; with
+  `ARCHIVE_LEAFLET_PDF=1` (default) it also **downloads the PDF into `data/leaflets/<CC>/`** (sha256-deduped,
+  so unchanged or regional-duplicate files are stored once). PDFs are served from your server at
+  `/api/leaflets/<id>/pdf`, so archived flyers remain readable after Lidl deletes them from their site.
+- Regional duplicates of the same leaflet are collapsed by name; `LEAFLET_MAX_PER_COUNTRY` (default 6) caps
+  how many of the current leaflets are kept per country per fetch.
+- Runs automatically after the weekly crawl (same scheduler), one-command manually with
+  `npm run leaflets -- --countries=PT,DE` (add `--nopdf` for metadata-only) or via
+  `POST /api/leaflets` (`{"countries":["PT"],"downloadPdf":true}`, protected by `CRAWL_SECRET`)
+  or the "Fetch latest leaflets" button on `/archive`.
+
+PDFs live in the `lidlr-data` volume (~5–20 MB per leaflet), so they survive updates; set
+`ARCHIVE_LEAFLET_PDF=0` if you only want the covers and metadata.
 
 ## Crawler mechanics (`src/lib/lidl/`)
 
