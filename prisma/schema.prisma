@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Country {
+  code     String    @id
+  name     String
+  host     String
+  locale   String
+  assortment String
+  currency String
+  enabled  Boolean   @default(true)
+  listings Listing[]
+  Alert    Alert[]
+}
+
+model Product {
+  erpNumber String  @id
+  title     String
+  brandName String?
+  brandSlug String?
+  category  String?
+  imageUrl  String?
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+  removed   Boolean  @default(false)
+  listings  Listing[]
+  snapshots Snapshot[]
+}
+
+// One row per product per country shop
+model Listing {
+  id          Int      @id @default(autoincrement())
+  product     Product  @relation(fields: [erpNumber], references: [erpNumber])
+  erpNumber   String
+  countryCode String
+  country     Country  @relation(fields: [countryCode], references: [code])
+  url         String?
+  currentPrice Float?
+  oldPrice    Float?
+  currency    String?
+  online      Boolean?
+  stockText   String?
+  stockOk     Boolean @default(false)
+  promo       String?
+  priceUpdatedAt DateTime?
+  snapshots   Snapshot[]
+
+  @@unique([erpNumber, countryCode])
+  @@index([countryCode, currentPrice])
+  @@index([erpNumber])
+}
+
+model Snapshot {
+  id          Int      @id @default(autoincrement())
+  product     Product  @relation(fields: [erpNumber], references: [erpNumber])
+  listing     Listing  @relation(fields: [listingId], references: [id])
+  listingId   Int
+  erpNumber   String
+  countryCode String
+  price       Float?
+  oldPrice    Float?
+  available   Boolean?
+  promo       String?
+  takenAt     DateTime @default(now())
+
+  @@index([erpNumber, countryCode, takenAt])
+}
+
+model Alert {
+  id        Int      @id @default(autoincrement())
+  kind      String
+  email     String
+  query     String?
+  brandSlug String?
+  countryCode String?
+  maxPrice  Float?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  lastFiredAt DateTime?
+  country   Country? @relation(fields: [countryCode], references: [code])
+  events    AlertEvent[]
+}
+
+model AlertEvent {
+  id        Int      @id @default(autoincrement())
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  alertId   Int
+  erpNumber String?
+  title     String
+  message   String
+  createdAt DateTime @default(now())
+  delivered Boolean @default(false)
+}
+
+model CrawlRun {
+  id        Int      @id @default(autoincrement())
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  source    String
+  countries Int
+  newItems  Int      @default(0)
+  priceChanges Int   @default(0)
+  errors    Int      @default(0)
+  notes     String?
+}
