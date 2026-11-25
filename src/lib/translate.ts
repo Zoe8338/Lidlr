@@ -7,10 +7,12 @@ export function translationEnabled() {
   return process.env.AUTO_TRANSLATE === "1";
 }
 
-// Free community translation endpoint (no key). Titles are batched several per
-// request (one line each); the response returns one segment per input line.
-// Failures are logged (throttled) and degrade silently: originals are kept and
-// retried on the next crawl — anything cached as failed is retried per process.
+// Free Google translate endpoints (no key). We rotate between three of them —
+// they are throttled per-endpoint/per-IP, so a 429 on one often succeeds on the
+// next; only when all three refuse do we wait longer stretches. Titles are
+// batched several per request. The "single" endpoint returns one segment per
+// input line; the "t" endpoints return all lines joined with \n (we split it
+// back). Failures degrade silently: originals are kept and retried later.
 function warnOnce(msg: string) {
   const now = Date.now();
   if (now - lastWarn > 60000) {
@@ -19,47 +21,106 @@ function warnOnce(msg: string) {
   }
 }
 
+const ENDPOINTS = [
+  { style: "single" as const, url: `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${TARGET}&dt=t`, method: "POST" as const },
+  { style: "t" as const, url: `https://translate.googleapis.com/translate_a/t?client=gtx&sl=auto&tl=${TARGET}`, method: "GET" as const },
+  { style: "t" as const, url: `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=${TARGET}`, method: "GET" as const },
+];
+let endpoint = 0;
+
 let pace = 800;
 const MAX_PACE = 8000;
-const COOLDOWN = 10000;
+const WAITS = [5000, 10000, 30000, 60000, 120000, 300000];
 
-async function batchRequest(lines: string[]): Promise<string[] | null> {
-  for (let attempt = 1; attempt <= 5; attempt++) {
+function parseJoined(j: unknown, n: number): string[] | null {
+  // [["a\nb\nc","de"]] -> ["a","b","c"] (also handles ["a\nb\nc"] shapes)
+  let joined: string | null = null;
+  if (Array.isArray(j) && Array.isArray(j[0]) && typeof j[0][0] === "string") joined = j[0][0];
+  else if (Array.isArray(j) && typeof j[0] === "string") joined = j[0];
+  if (joined == null) return null;
+  const parts = joined.split("\n").map((s) => s.trim()).filter(Boolean);
+  return parts.length === n ? parts : null;
+}
+
+function parseSegments(j: unknown, n: number): string[] | null {
+  const segs = Array.isArray(j) && Array.isArray(j[0]) ? j[0] : [];
+  if (!Array.isArray(segs) || segs.length !== n) return null;
+  return segs.map((s) => (Array.isArray(s) ? String(s[0] ?? "").replace(/\n$/, "").trim() : ""));
+}
+
+async function translateOnce(
+  q: string,
+  perLine: number | null,
+): Promise<string[] | string | null> {
+  const ep = ENDPOINTS[endpoint];
+  const body = ep.style === "single" ? "q=" + encodeURIComponent(q) : undefined;
+  const url = ep.style === "single" ? ep.url : `${ep.url}&q=${encodeURIComponent(q)}`;
+  const r = await fetch(url, {
+    method: ep.method,
+    headers: { "user-agent": "Mozilla/5.0", "content-type": "application/x-www-form-urlencoded" },
+    ...(body ? { body } : {}),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (r.status === 429 || r.status >= 500) throw Object.assign(new Error(`http:${r.status}`), { rate: true });
+  if (!r.ok) throw Object.assign(new Error(`http:${r.status}`), { rate: false });
+  const j = (await r.json()) as unknown;
+  if (perLine != null) {
+    const out = ep.style === "single" ? parseSegments(j, perLine) : parseJoined(j, perLine);
+    if (out) return out;
+    throw Object.assign(new Error("shape"), { rate: false });
+  }
+  const one = parseJoined(j, 1);
+  if (one) return one[0];
+  // long free text may still come back as separate segments — join them
+  const segs = Array.isArray(j) && Array.isArray(j[0]) ? j[0] : [];
+  if (!segs.length) throw Object.assign(new Error("shape"), { rate: false });
+  return segs.map((s) => (Array.isArray(s) ? String(s[0] ?? "") : "")).join("").replace(/\n+/g, " ").trim();
+}
+
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+async function withRetries(
+  q: string,
+  perLine: number | null,
+  keepOriginal: string,
+): Promise<string[] | string | null> {
+  let shapeFails = 0;
+  for (let attempt = 0; attempt < WAITS.length; attempt++) {
     try {
-      const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${TARGET}&dt=t`, {
-        method: "POST",
-        headers: { "user-agent": "Mozilla/5.0", "content-type": "application/x-www-form-urlencoded" },
-        body: "q=" + encodeURIComponent(lines.join("\n")),
-        signal: AbortSignal.timeout(12000),
-      });
-      if (r.status === 429 || r.status >= 500) {
-        pace = Math.min(MAX_PACE, pace * 4);
-        if (attempt === 5) {
-          warnOnce(`still rate-limited (${r.status}) after backoff — keeping original titles; they will be retried on the next run.`);
+      const out = await translateOnce(q, perLine);
+      endpoint = (endpoint + 1) % ENDPOINTS.length; // next batch starts on a fresh endpoint
+      pace = Math.max(800, Math.floor(pace / 2));
+      return out;
+    } catch (e: unknown) {
+      const rate = (e as { rate?: boolean })?.rate === true;
+      endpoint = (endpoint + 1) % ENDPOINTS.length;
+      if (!rate) {
+        if (e instanceof Error && e.message === "shape") {
+          if (++shapeFails >= 2) {
+            warnOnce(`unexpected response shape — ${keepOriginal}`);
+            return null;
+          }
+          await sleep(2000);
+          continue;
+        }
+        if (attempt >= 2) {
+          warnOnce(`request failed (${e instanceof Error ? e.message : e}) — ${keepOriginal}`);
           return null;
         }
-        const wait = Math.min(COOLDOWN * 2 ** (attempt - 1), 120000);
-        console.warn(`[translate] rate-limited (${r.status}) — waiting ${Math.round(wait / 1000)}s, then retrying.`);
-        await new Promise((res) => setTimeout(res, wait));
+        await sleep(5000);
         continue;
       }
-      if (!r.ok) throw new Error(String(r.status));
-      pace = Math.max(800, Math.floor(pace / 2));
-      const j = (await r.json()) as unknown;
-      const segs = Array.isArray(j) && Array.isArray(j[0]) ? j[0] : [];
-      if (!Array.isArray(segs) || segs.length !== lines.length) return null;
-      return segs.map((s) => (Array.isArray(s) ? String(s[0] ?? "").replace(/\n$/, "").trim() : ""));
-    } catch (e) {
-      if (attempt === 5) {
-        warnOnce(
-          `request failed (${e instanceof Error ? e.message : e}) — keeping original titles; retried next crawl.`,
-        );
-        return null;
-      }
-      await new Promise((res) => setTimeout(res, COOLDOWN));
+      const wait = WAITS[Math.min(attempt, WAITS.length - 1)];
+      console.warn(`[translate] rate-limited — trying next endpoint in ${Math.round(wait / 1000)}s.`);
+      await sleep(wait);
     }
   }
+  warnOnce(`still rate-limited after backoff — ${keepOriginal}`);
   return null;
+}
+
+export async function batchRequestLines(lines: string[]): Promise<string[] | null> {
+  return (await withRetries(lines.join("\n"), lines.length, "keeping original titles; they will be retried on the next run.")) as string[] | null;
 }
 
 export async function translateTitles(titles: string[]): Promise<Map<string, string | null>> {
@@ -78,7 +139,7 @@ export async function translateTitles(titles: string[]): Promise<Map<string, str
 
   for (let i = 0; i < pending.length; i += BATCH) {
     const chunk = pending.slice(i, i + BATCH);
-    const out = await batchRequest(chunk.map((t) => t.slice(0, 300)));
+    const out = await batchRequestLines(chunk.map((t) => t.slice(0, 300)));
     if (out) {
       chunk.forEach((t, k) => {
         const v = out[k]?.trim() || null;
@@ -102,35 +163,10 @@ export async function translateTitle(raw: string): Promise<string | null> {
   return m.get(raw.trim()) ?? null;
 }
 
-// Free-form text (descriptions): Google splits long inputs into several
-// segments, so the response segments are joined in order instead of matched
-// one-to-one like translateTitles does.
 export async function translateText(text: string): Promise<string | null> {
   if (!translationEnabled()) return null;
   const t = text.trim();
   if (!t) return null;
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${TARGET}&dt=t`, {
-        method: "POST",
-        headers: { "user-agent": "Mozilla/5.0", "content-type": "application/x-www-form-urlencoded" },
-        body: "q=" + encodeURIComponent(t.slice(0, 2000)),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (r.status === 429 || r.status >= 500) {
-        if (attempt === 5) return null;
-        const wait = Math.min(COOLDOWN * 2 ** (attempt - 1), 120000);
-        await new Promise((res) => setTimeout(res, wait));
-        continue;
-      }
-      if (!r.ok) return null;
-      const j = (await r.json()) as unknown;
-      const segs = Array.isArray(j) && Array.isArray(j[0]) ? j[0] : [];
-      if (!segs.length) return null;
-      return segs.map((s) => (Array.isArray(s) ? String(s[0] ?? "") : "")).join("").replace(/\n+/g, " ").trim() || null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
+  const out = await withRetries(t.slice(0, 2000), null, "keeping the original text.");
+  return typeof out === "string" && out ? out : null;
 }
