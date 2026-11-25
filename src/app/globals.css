@@ -443,7 +443,9 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 }
 
 /* Horizontal scroll fallback for wide tables on phones */
-.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.table-scroll::-webkit-scrollbar { height: 8px; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 .table-scroll table.prices { min-width: 640px; }
 .table-scroll table.prices.manuals { min-width: 420px; }
 
@@ -583,6 +585,7 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 .pp-table .pp-code a { font-variant-numeric: tabular-nums; font-size: 13px; }
 .pp-table .pp-name { max-width: 380px; }
 .pp-table .pp-name a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-table .pp-promo { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-table img { display: block; }
 
 /* Product description + specs block (ParkPrice-style) */

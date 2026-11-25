@@ -40,7 +40,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
   const online = one(sp, "online") ?? "unknown";
   const sortcol = ["price", "date", "discount"].includes(one(sp, "sortcol") || "") ? one(sp, "sortcol")! : "date";
   const sortdir = (one(sp, "sortdir") || "desc") === "asc" ? "asc" : "desc";
-  const view = one(sp, "view") === "cards" ? "cards" : "table";
+  const view = one(sp, "view") === "table" ? "table" : "cards";
   const ps = one(sp, "ps") ?? "24";
   const pageSize = ps === "all" ? MAX_SCAN : Math.max(10, Math.min(200, Number(ps) || 24));
   const page = Math.max(1, Number(one(sp, "page") || 1));
@@ -348,7 +348,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
                     </td>
                   )}
                   <td>{d.countryCode}</td>
-                  {week === "next" ? null : <td>{d.promo || ""}</td>}
+                  {week === "next" ? null : <td className="pp-promo">{d.promo || ""}</td>}
                   <td>{fmtDate(d.date)}</td>
                 </tr>
               ))}
