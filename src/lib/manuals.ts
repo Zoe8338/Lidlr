@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import https from "node:https";
 import path from "node:path";
 import { prisma } from "./db.ts";
 import { parseDetails } from "./lidl/details.ts";
@@ -62,9 +63,31 @@ async function fetchText(url: string): Promise<string | null> {
     });
     if (!r.ok) return null;
     return await r.text();
-  } catch {
+  } catch (e) {
+    // some Lidl sites (e.g. .pl) send oversized response headers which exceed
+    // Node's default fetch limit — retry through node:https without it
+    if ((e as { cause?: { code?: string } })?.cause?.code === "UND_ERR_HEADERS_OVERFLOW") {
+      return httpsGetText(url);
+    }
     return null;
   }
+}
+
+function httpsGetText(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    https
+      .get(url, { headers: { "user-agent": USER_AGENT }, maxHeaderSize: 1 << 20 }, (res) => {
+        if ((res.statusCode ?? 500) >= 400) {
+          res.resume();
+          resolve(null);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      })
+      .on("error", () => resolve(null));
+  });
 }
 
 // The "Anleitungen & Downloads" block: one <tr class="downloads__body"> per
@@ -94,7 +117,52 @@ export function parseManuals(html: string): ParsedManual[] {
       out.push({ url, title: "Manual", language: null });
     }
   }
+  for (const m of parsePdfManuals(html)) {
+    if (!seen.has(m.url)) {
+      seen.add(m.url);
+      out.push(m);
+    }
+  }
   return out;
+}
+
+// Current Lidl product pages are a Nuxt app whose SSR state (__NUXT_DATA__,
+// devalue "index" format) carries the manuals as a pdfManuals list of
+// { name, language, url } objects. This finds those regardless of the
+// server-rendered markup, and is the most reliable source.
+export function parsePdfManuals(html: string): ParsedManual[] {
+  try {
+    const i = html.indexOf("__NUXT_DATA__");
+    if (i < 0) return [];
+    const s = html.indexOf(">", i) + 1;
+    const e = html.indexOf("</script>", s);
+    if (e <= s) return [];
+    const arr = JSON.parse(html.slice(s, e)) as unknown[];
+    const out: ParsedManual[] = [];
+    for (const c of arr) {
+      if (!c || typeof c !== "object" || Array.isArray(c) || !("pdfManuals" in (c as object))) continue;
+      const list = arr[(c as Record<string, number>).pdfManuals];
+      if (!Array.isArray(list)) continue;
+      for (const entry of list) {
+        const m = arr[entry];
+        if (!m || typeof m !== "object" || Array.isArray(m)) continue;
+        const o = m as Record<string, number>;
+        const url = typeof o.url === "number" ? arr[o.url] : o.url;
+        const name = typeof o.name === "number" ? arr[o.name] : o.name;
+        const language = typeof o.language === "number" ? arr[o.language] : o.language;
+        if (typeof url !== "string" || !/^https?:\/\/[^\s]+\.pdf/i.test(url)) continue;
+        out.push({
+          url: url.slice(0, 500),
+          title: typeof name === "string" && name ? name.slice(0, 300) : "Manual",
+          language: typeof language === "string" && language ? language.slice(0, 8) : null,
+        });
+      }
+    }
+    const seen = new Set<string>();
+    return out.filter((m) => (seen.has(m.url) ? false : (seen.add(m.url), true)));
+  } catch {
+    return [];
+  }
 }
 
 function dataDir(): string {
@@ -187,6 +255,11 @@ export async function fetchManuals(
     }
     if (pageHtml && !product.description) 
       await describeProduct(product.erpNumber, pageHtml);
+    if (!pageHtml) {
+      // page fetch failed — do NOT mark as checked, so it is retried later
+      errors++;
+      continue;
+    }
     if (!found.length) {
       await prisma.product.update({ where: { erpNumber: product.erpNumber }, data: { manualCheckedAt: new Date() } });
       continue;

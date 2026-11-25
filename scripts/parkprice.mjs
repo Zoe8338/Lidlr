@@ -85,11 +85,13 @@ function parseProduct(html) {
       ?.replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&").replace(/&gt;/g, ">").replace(/&lt;/g, "<") ?? null;
   const img =
     html.match(/<meta property="og:image" content="([^"]+)"/)?.[1] ?? null;
+  // ParkPrice product pages link manuals two ways: a single "btnOpenPDF"
+  // button and/or a "Download the file" table of <a class="downloads-link",
+  // sometimes several per language both lead to Lidl's media.sit-connect.com
+  // PDFs. Accept every .pdf anchor on the page.
   const manuals = [...new Set(
-    [...html.matchAll(/<a\b[^>]*>/gi)]
-      .map((m) => m[0])
-      .filter((tag) => /id=["']btnOpenPDF["']/.test(tag))
-      .map((tag) => tag.match(/href=["']([^"']+\.pdf[^"']*)["']/i)?.[1])
+    [...html.matchAll(/<a\b[^>]*href=["']([^"']+\.pdf[^"']*)["'][^>]*>/gi)]
+      .map((m) => m[1])
       .filter(Boolean)
   )];
   return { ian, title, img, manuals };

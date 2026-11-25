@@ -4,8 +4,10 @@
 FROM node:22-alpine
 
 WORKDIR /app
+# some Lidl sites (e.g. .pl) send oversized response headers — default is 16 kB
 ENV NODE_ENV=production \
-    DATABASE_URL=file:/app/data/lidlr.db
+    DATABASE_URL=file:/app/data/lidlr.db \
+    NODE_OPTIONS=--max-http-header-size=1048576
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma

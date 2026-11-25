@@ -413,15 +413,21 @@ page ("Anleitungen & Downloads", served from `manuals.sit-connect.com`). Lidlr a
   (default 150) products are checked per run; everything drains over a few runs. Skip it with
   `--no-manuals`, resize with `--manuals=<n>`, or run standalone with
   `npm run manuals -- --countries=DE --max=50`.
+- Extraction covers all current page variants: the SSR `__NUXT_DATA__` `pdfManuals` list, the
+  older `downloads__body` table, and any `manuals.sit-connect.com` PDF link. Lidl sites with
+  oversized response headers (e.g. `.pl`) are fetched with a raised header limit (set in the
+  Docker image; otherwise an automatic `node:https` fallback retries the request).
 - The same product-page fetch also captures the **description and specs** (see
   [Product details](#product-details-description--specs)) — one network visit serves both.
-- Manuals imported from ParkPrice appear as **Official ↗** links too (no archived copy —
-  archive copies are made by our own fetcher, which downloads from Lidl directly).
+- **ParkPrice fallback**: `npm run parkprice` imports the manual PDFs linked on ParkPrice's
+  product pages (both its `btnOpenPDF` button and `Download the file` table rows) — also Lidl's
+  own `media.sit-connect.com` hosts. Own-crawl archives come first; run ParkPrice as the
+  supplementary source for products our crawler visited while Lidl served no manual.
 - The product page lists every manual with the **Official ↗** link plus an **Archived copy**
   link (`/api/manuals/<id>`) served from your volume — the PDF stays available even if Lidl
   or SIT takes the original down.
-- Products with no manuals are remembered (`manualCheckedAt`) and never re-fetched (unless
-  their description is still missing).
+- Products whose page fetch **failed** (network, bot wall) are retried on the next pass —
+  only pages that were actually fetched and contain no manuals are marked as checked.
 
 ## Crawler mechanics (`src/lib/lidl/`)
 
