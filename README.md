@@ -104,14 +104,19 @@ process — no external cron needed:
 - **Boot pass** — ~60 s after the container starts: full crawl of every enabled
   country × brand, then tracking evaluation → notification delivery → leaflet
   fetch → leaflet-offer evaluation → delivery → manuals + descriptions pass.
-- **Every 10 minutes** it checks each enabled country's **local time**; when a
-  shop reaches 02:00 local (`CRAWL_HOUR`, default 2) and that country hasn't
-  been crawled in the last 22 h, that country is crawled on its own, then
-  tracking evaluation + notification delivery + a capped manuals pass run.
-  So every country gets a fresh **daily** crawl at 02:00 *its* time (Lidl drops
-  land mid-week and on Fridays), and the load is spread thinly over the night.
-- **Leaflets** are re-fetched once per 24 h; leaflet offers are re-evaluated
-  right after, so in-leaflet notifications stay current for Monday/Friday drops.
+- **Every 10 minutes** it checks each enabled country's **local time**; once a
+  shop's local clock has passed 02:00 (`CRAWL_HOUR`, default 2) and it wasn't
+  crawled in the last 22 h, that country is crawled — countries stay due until
+  they've actually been crawled, so a heavy night (13+ countries share CET)
+  drains over successive ticks (max 4 per tick, ~70 min) instead of being
+  skipped. After each country's crawl: tracking evaluation + notification
+  delivery + a capped manuals pass. So every country gets a fresh **daily**
+  crawl at 02:00 *its* time (covering the Monday and Friday drops).
+- **Leaflets** are refreshed per country **right after that country's crawl**
+  (at most every 12 h, `LEAFLET_INTERVAL_MS`), so a new weekly flyer is in the
+  archive within a few hours of appearing; a global fallback refresh runs every
+  12 h too. Leaflet offers and in-leaflet notifications are re-evaluated right
+  after every leaflet fetch.
 
 Stagger detail: at most 4 countries are crawled per 10-minute tick, so even a
 fully-synchronized clock edge crawls at most 4 shops at once.
