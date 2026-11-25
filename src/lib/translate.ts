@@ -19,8 +19,12 @@ function warnOnce(msg: string) {
   }
 }
 
+let pace = 800;
+const MAX_PACE = 8000;
+const COOLDOWN = 10000;
+
 async function batchRequest(lines: string[]): Promise<string[] | null> {
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
     try {
       const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${TARGET}&dt=t`, {
         method: "POST",
@@ -29,31 +33,34 @@ async function batchRequest(lines: string[]): Promise<string[] | null> {
         signal: AbortSignal.timeout(12000),
       });
       if (r.status === 429 || r.status >= 500) {
-        if (r.status === 429 && pace < MAX_PACE) pace = Math.min(MAX_PACE, pace * 4);
-        if (attempt === 3) {
-          warnOnce(`rate-limited (${r.status}) — keeping original titles; will retry on the next crawl/backfill.`);
+        pace = Math.min(MAX_PACE, pace * 4);
+        if (attempt === 5) {
+          warnOnce(`still rate-limited (${r.status}) after backoff — keeping original titles; they will be retried on the next run.`);
           return null;
         }
-        await new Promise((res) => setTimeout(res, attempt * 4000));
+        const wait = Math.min(COOLDOWN * 2 ** (attempt - 1), 120000);
+        console.warn(`[translate] rate-limited (${r.status}) — waiting ${Math.round(wait / 1000)}s, then retrying.`);
+        await new Promise((res) => setTimeout(res, wait));
         continue;
       }
       if (!r.ok) throw new Error(String(r.status));
+      pace = Math.max(800, Math.floor(pace / 2));
       const j = (await r.json()) as unknown;
       const segs = Array.isArray(j) && Array.isArray(j[0]) ? j[0] : [];
       if (!Array.isArray(segs) || segs.length !== lines.length) return null;
       return segs.map((s) => (Array.isArray(s) ? String(s[0] ?? "").replace(/\n$/, "").trim() : ""));
     } catch (e) {
-      warnOnce(
-        `request failed (${e instanceof Error ? e.message : e}) — keeping original titles; retried next crawl.`,
-      );
-      return null;
+      if (attempt === 5) {
+        warnOnce(
+          `request failed (${e instanceof Error ? e.message : e}) — keeping original titles; retried next crawl.`,
+        );
+        return null;
+      }
+      await new Promise((res) => setTimeout(res, COOLDOWN));
     }
   }
   return null;
 }
-
-let pace = 400;
-const MAX_PACE = 5000;
 
 export async function translateTitles(titles: string[]): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
@@ -102,7 +109,7 @@ export async function translateText(text: string): Promise<string | null> {
   if (!translationEnabled()) return null;
   const t = text.trim();
   if (!t) return null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
     try {
       const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${TARGET}&dt=t`, {
         method: "POST",
@@ -111,8 +118,9 @@ export async function translateText(text: string): Promise<string | null> {
         signal: AbortSignal.timeout(15000),
       });
       if (r.status === 429 || r.status >= 500) {
-        if (attempt === 3) return null;
-        await new Promise((res) => setTimeout(res, attempt * 4000));
+        if (attempt === 5) return null;
+        const wait = Math.min(COOLDOWN * 2 ** (attempt - 1), 120000);
+        await new Promise((res) => setTimeout(res, wait));
         continue;
       }
       if (!r.ok) return null;

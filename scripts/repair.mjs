@@ -2,10 +2,11 @@
 //   - missing English titles       -> batch translation backfill
 //   - missing description/specs    -> product-page fetch + parse + translate
 //   - missing manuals              -> product-page crawl + PDF archive
-//   - foreign (non-own-brand) rows -> report only (run `npm run prune -- --apply`)
+//   - foreign (non-own-brand) rows -> report only; add --prune to delete them
 //
 //   npm run repair                 full pass over everything missing
 //   npm run repair -- --limit=500  cap the per-phase product count
+//   npm run repair -- --prune      also delete foreign products (and their listings/snapshots)
 import spawn from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
@@ -18,6 +19,7 @@ const args = Object.fromEntries(
   })
 );
 const LIMIT = args.limit ? Number(args.limit) : 1e9;
+const PRUNE = Boolean(args.prune);
 const here = fileURLToPath(new URL("../", import.meta.url));
 const run = (s, a) =>
   new Promise((resolve) => {
@@ -25,8 +27,8 @@ const run = (s, a) =>
     resolve(r.status);
   });
 
-console.log("=== repair: 1/4 foreign rows (report only) ===");
-await run("scripts/prune.mjs", []);
+console.log("=== repair: 1/4 foreign rows (report only; add --prune to delete) ===");
+await run("scripts/prune.mjs", PRUNE ? ["--apply"] : []);
 
 console.log("\n=== repair: 2/4 missing English titles ===");
 const noEn = await prisma.product.count({ where: { titleEn: null } });
