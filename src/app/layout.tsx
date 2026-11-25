@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { currentUser, getTheme } from "@/lib/auth";
 import { logout } from "@/app/actions";
@@ -7,9 +7,33 @@ import { CookieBanner } from "@/components/CookieBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Lidlr — Lidl EU price tracker",
+  metadataBase: new URL(process.env.SITE_URL || "http://localhost:3000"),
+  title: {
+    default: "Lidlr — Lidl EU price tracker (Parkside, Crivit, SilverCrest, Livarno…)",
+    template: "%s",
+  },
   description:
-    "Track prices, new items and deals for Parkside, Esmara, Crivit, Cien, SilverCrest, Livarno, Livery, Dentalux and more across every EU Lidl online shop.",
+    "Track prices, new items and weekly in-store deals for Parkside, Esmara, Crivit, Cien, SilverCrest (Personal Care & Kitchen Tools), Livarno, Livery and Dentalux across every EU Lidl online shop — with EUR-converted prices, leaflet archive and product manuals.",
+  keywords: [
+    "lidl price tracker",
+    "parkside price tracker",
+    "lidl deals",
+    "lidl leaflet archive",
+    "crivit catalog",
+    "silvercrest price history",
+    "livarno",
+    "lidl eu price comparison",
+  ],
+  openGraph: { siteName: "Lidlr", type: "website" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0f14" },
+  ],
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -49,7 +73,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             )}
           </div>
         </header>
-        <main className="container">{children}</main>
+        <main className="container">
+          {children}
+        </main>
         <footer className="site container">
           <div className="footer-links">
             <Link href="/privacy">Privacy</Link>

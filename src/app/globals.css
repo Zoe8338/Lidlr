@@ -388,3 +388,72 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 }
 [data-theme="dark"] .country-card { color: var(--text); }
 [data-theme="dark"] .archive-nav { background: var(--surface2); }
+
+/* ---- EUR-primary price presentation ---- */
+.price-line { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.price-line .price { font-size: 19px; font-weight: 800; color: var(--accent); }
+.local-price { color: var(--muted); }
+.cell-eur { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.cell-local { color: var(--muted); white-space: nowrap; }
+.best-strip { background: var(--surface2); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; display: inline-block; }
+.best-strip strong { color: var(--accent); font-size: 15px; }
+.discount-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  background: var(--red);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 3px 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Horizontal scroll fallback for wide tables on phones */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll table.prices { min-width: 640px; }
+.table-scroll table.prices.manuals { min-width: 420px; }
+
+/* Toolbar behaves like a form grid on small screens */
+@media (max-width: 720px) {
+  .container { padding: 0 12px; }
+  header.site .inner { gap: 8px; padding: 10px 0; }
+  .logo { font-size: 19px; }
+  nav.main { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  nav.main a { white-space: nowrap; padding: 6px 10px; font-size: 13.5px; }
+  .userbar { gap: 6px; }
+  .userchip { max-width: 110px; font-size: 12px; }
+
+  .hero { padding: 22px 0 8px; }
+  .hero h1 { font-size: 23px; }
+  .hero p { font-size: 14px; }
+  h1 { font-size: 21px; }
+  h2.section { font-size: 17px; margin: 24px 0 10px; }
+
+  .statrow { gap: 8px; margin: 16px 0; }
+  .stat { flex: 1 1 45%; min-width: 0; padding: 12px 14px; }
+  .stat .num { font-size: 21px; }
+
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .card { padding: 10px; }
+  .card img { height: 118px; }
+  .card .title { font-size: 12.5px; min-height: 0; }
+  .price-line .price { font-size: 16px; }
+  .price-line .old { font-size: 12px; }
+  .local-price { font-size: 11.5px; }
+
+  .toolbar input, .toolbar select { flex: 1 1 46%; min-width: 0; }
+  .toolbar input[name="q"] { flex: 1 1 100%; }
+  .toolbar input[type="number"] { flex: 1 1 46%; max-width: none; }
+
+  table.prices th, table.prices td { padding: 9px 10px; font-size: 13px; }
+  .pager { flex-wrap: wrap; }
+  .cookie-banner { padding: 12px 14px; font-size: 12.5px; }
+  .archive-layout { gap: 12px; }
+  .target-form { max-width: 100%; }
+}
+@media (max-width: 400px) {
+  .grid { grid-template-columns: 1fr; }
+}

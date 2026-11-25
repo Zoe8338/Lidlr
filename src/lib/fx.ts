@@ -43,6 +43,44 @@ export function convert(amount: number, from: string, to: string, fx: FxRates): 
   return (amount / rates[from]) * rates[to];
 }
 
+const nf = new Intl.NumberFormat("en", { style: "currency", currency: "EUR", currencyDisplay: "narrowSymbol" });
+
+// format non-euro prices the way locals read them (e.g. "2 999 Ft")
+const CURRENCY_LOCALE: Record<string, string> = {
+  PLN: "pl-PL",
+  CZK: "cs-CZ",
+  HUF: "hu-HU",
+  RON: "ro-RO",
+  BGN: "bg-BG",
+  SEK: "sv-SE",
+  DKK: "da-DK",
+  CHF: "de-CH",
+  GBP: "en-GB",
+};
+
+export function fmtEur(value: number): string {
+  return nf.format(value);
+}
+
+export function fmtLocal(value: number, currency: string): string | null {
+  if (!currency) return null;
+  if (currency === "EUR") return fmtEur(value);
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALE[currency] ?? "en", {
+      style: "currency",
+      currency,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${currency}`;
+  }
+}
+
+export function toEur(amount: number, currency: string | null | undefined, fx: FxRates | null): number | null {
+  if (amount == null) return null;
+  if (!currency || !fx || currency === "EUR") return amount;
+  return convert(amount, currency, "EUR", fx);
+}
+
 export const CURRENCY_NAMES: Record<string, string> = {
   EUR: "Euro",
   PLN: "Polish złoty",

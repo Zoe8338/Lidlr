@@ -23,9 +23,11 @@ politeness delay in place, and don't hammer the shops.
 
 Lidl prices come in 10 different currencies across the tracked shops. Using the
 free ECB reference-rate API (frankfurter.dev, no key, pegged BGN supported),
-product pages show every country price in its local currency together with a
-`≈ EUR` equivalent, and product cards in lists show the same equivalent, so a
-PLN price can be compared against an EUR price at a glance.
+**EUR is always the primary price**: product cards and the per-country price
+table show the EUR equivalent first, with the local shop currency underneath
+(formatted the local way, e.g. «2 999,00 zł» / «4999 Ft»). Cheapest-country,
+sorting, min/max filters and the deals "biggest discount %" sort all operate
+on the EUR value, so PLN and EUR listings are compared fairly.
 
 ## Product images
 
@@ -157,13 +159,33 @@ curl -X POST http://localhost:3000/api/crawl \
 | Route | What it shows |
 |---|---|
 | `/` | Overview: tracked counts, brand families, latest deals, new arrivals |
-| `/products` | Search + filter by brand family, country, price sort |
-| `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, multi-country price-history chart, tracking popup (ParkPrice-style, editable), manuals & downloads with archived copies |
-| `/deals` | Current promotions (deal of the day, flash sales, promo ribbons, old→new price drops) |
+| `/products` | Multi-word search (EN/DE/FR/ES/IT/PT vocabulary with synonyms) + filters: brand family, country, EUR price range, in-stock, on-sale, sort (newest / name / price) — full pagination |
+| `/products/[erp]` | Product detail: gallery, per-country price table (EUR primary, local secondary), cheapest-country highlight, multi-country price-history chart, tracking popup (ParkPrice-style, editable), manuals & downloads with archived copies |
+| `/deals` | ALL current weekly in-store deals, paginated (not capped), filter by country/brand, sort by newest / biggest discount % / price |
 | `/new` | Items first seen within the last 7/14/30/90 days |
 | `/archive` | Weekly leaflet (flyer) archive per country: covers, validity dates and stored PDFs |
 | `/alerts` | Passwordless sign-in flow, tracked products, notification feed, email/WhatsApp settings |
 | `/privacy`, `/cookies`, `/terms` | Legal pages: privacy policy, cookie policy, terms of use |
+
+## Search & SEO
+
+Search tokenizes every word (AND across tokens) and expands tokens through a
+multilingual synonym vocabulary (e.g. `screwdriver` ↔ *Akkuschrauber/Schrauber/*
+*parafusadeira/atornillador/visseuse/avvitatore*), matching against the original
+title, the auto-translated English title and the brand name — so shoppers can
+search in any of the languages Lidl titles arrive in. Plural/singular endings are
+forgiven and brand aliases (`livergy` → livery, sub-brand names → families) map
+to the right family filter.
+
+For external SEO: `robots.txt` and a dynamic `sitemap.xml` (all product pages)
+are generated, every product page emits per-product `<title>`/description/Open
+Graph metadata, and `SITE_URL` sets the canonical base URL.
+
+## Mobile
+
+The stylesheet is mobile-first at ≤720px: 2-column product grid, horizontally
+scrollable nav and tables, full-width filter fields, compact hero/stats, and
+scroll-safe modals. No layout is desktop-only.
 
 ## Tracking & notifications
 
