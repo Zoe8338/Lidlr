@@ -123,13 +123,23 @@ IAN is known (crawls fill `Product.ians`); everything else is skipped.
 Price/sales history is not imported (anonymous ParkPrice data is geo-scoped).
 
 ```bash
-# inside the container, against the live database
+# crawl + ParkPrice import in one command (flags go to the crawl,
+# pp-* flags go to the import)
+docker compose exec lidlr npm run refresh -- --countries=DE,AT,FR,IT,ES,NL,BE,PL,PT --max=100
+
+# inside the container, import only
 docker compose exec lidlr npm run parkprice -- --max=500
 
 # dry run / probe a few pages / full pass
 npm run parkprice -- --dry-run
 npm run parkprice -- --probe=20
 npm run parkprice
+```
+
+Quick database stats (product/listing counts) from the host:
+
+```bash
+docker compose exec lidlr node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();(async()=>{console.log('products:',await p.product.count());console.log('listings:',await p.listing.count());console.log('snapshots:',await p.snapshot.count());process.exit(0)})()"
 ```
 
 Progress is stored in `data/parkprice-progress.json`, so an interrupted run
