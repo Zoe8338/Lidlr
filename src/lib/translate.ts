@@ -79,17 +79,27 @@ async function translateOnce(
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+// circuit breaker: when Google throttles an IP hard, waiting per-request on
+// every product stalls the manuals/crawl passes; suspend translation entirely
+// for a while and keep storing originals (retried by later passes).
+let consecutive429 = 0;
+let suspendedUntil = 0;
+const BREAKER_TRIP = 10;
+const BREAKER_COOLDOWN_MS = 10 * 60 * 1000;
+
 async function withRetries(
   q: string,
   perLine: number | null,
   keepOriginal: string,
 ): Promise<string[] | string | null> {
+  if (Date.now() < suspendedUntil) return null;
   let shapeFails = 0;
   for (let attempt = 0; attempt < WAITS.length; attempt++) {
     try {
       const out = await translateOnce(q, perLine);
       endpoint = (endpoint + 1) % ENDPOINTS.length; // next batch starts on a fresh endpoint
       pace = Math.max(800, Math.floor(pace / 2));
+      consecutive429 = 0;
       return out;
     } catch (e: unknown) {
       const rate = (e as { rate?: boolean })?.rate === true;
@@ -109,6 +119,12 @@ async function withRetries(
         }
         await sleep(5000);
         continue;
+      }
+      consecutive429++;
+      if (consecutive429 >= BREAKER_TRIP) {
+        suspendedUntil = Date.now() + BREAKER_COOLDOWN_MS;
+        warnOnce(`heavily rate-limited — suspending translation for 10 min; originals are kept and retried later.`);
+        return null;
       }
       const wait = WAITS[Math.min(attempt, WAITS.length - 1)];
       console.warn(`[translate] rate-limited — trying next endpoint in ${Math.round(wait / 1000)}s.`);
