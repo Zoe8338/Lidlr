@@ -109,6 +109,8 @@ Google-translate community endpoint — no key, no dependency. Translations are:
 - stored in `Product.titleEn` and cached in-process per title,
 - shown on product cards (original underneath) and product pages,
 - backfilled on the next crawl for products already in the DB (one-time),
+- backfillable for old/off-catalog products without a full crawl:
+  `docker compose exec lidlr npm run translate` (or `-- --limit=200`, `-- --dry-run`),
 - optionally enriched with ParkPrice's English titles via the importer below.
 
 Failures degrade silently — the original name is kept and retried next run.

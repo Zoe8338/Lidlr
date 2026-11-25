@@ -46,7 +46,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
   const online = one(sp, "online") ?? "unknown";
   const sortcol = ["name", "price", "date"].includes(one(sp, "sortcol") || "") ? one(sp, "sortcol")! : "date";
   const sortdir = (one(sp, "sortdir") || "desc") === "asc" ? "asc" : "desc";
-  const view = one(sp, "view") === "cards" ? "cards" : "table";
+  const view = one(sp, "view") === "table" ? "table" : "cards";
   const ps = one(sp, "ps") ?? "24";
   const pageSize = ps === "all" ? MAX_SCAN : Math.max(10, Math.min(200, Number(ps) || 24));
   const page = Math.max(1, Number(one(sp, "page") || 1));

@@ -10,6 +10,7 @@
     "db:push": "prisma db push",
     "crawl": "node scripts/crawl.mjs",
     "parkprice": "node scripts/parkprice.mjs",
+    "translate": "node scripts/translate.mjs",
     "refresh": "node scripts/refresh.mjs",
     "leaflets": "node scripts/leaflets.mjs",
     "manuals": "node scripts/manuals.mjs"
