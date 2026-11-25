@@ -30,10 +30,12 @@ model Product {
   firstSeen     DateTime       @default(now())
   lastSeen      DateTime       @default(now())
   removed       Boolean        @default(false)
-  listings      Listing[]
-  snapshots     Snapshot[]
-  trackings     Tracking[]
-  notifications Notification[]
+  listings        Listing[]
+  snapshots       Snapshot[]
+  trackings       Tracking[]
+  notifications   Notification[]
+  manuals         Manual[]
+  manualCheckedAt DateTime?
 }
 
 // One row per product per country shop
@@ -160,6 +162,25 @@ model Leaflet {
 }
 
 // One offer tile from a leaflet (from Lidl's flyer JSON API)
+// An archived product manual: the official PDF (usually manuals.sit-connect.com)
+// plus its sha256-deduped copy under data/manuals/.
+model Manual {
+  id        Int      @id @default(autoincrement())
+  product   Product  @relation(fields: [erpNumber], references: [erpNumber], onDelete: Cascade)
+  erpNumber String
+  url       String
+  title     String
+  language  String?
+  sha256    String?
+  sizeBytes Int?
+  stored    Boolean  @default(false)
+  storedPath String?
+  fetchedAt DateTime @default(now())
+
+  @@unique([erpNumber, url])
+  @@index([erpNumber])
+}
+
 model LeafletOffer {
   id        Int      @id @default(autoincrement())
   leaflet   Leaflet  @relation(fields: [leafletId], references: [id], onDelete: Cascade)

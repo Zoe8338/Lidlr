@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runCrawl, evaluateTrackings } from "@/lib/lidl/crawler";
 import { deliverPendingNotifications } from "@/lib/notify";
 import { fetchLeaflets, evaluateLeafletOffers } from "@/lib/leaflets";
+import { fetchManuals } from "@/lib/manuals";
 
 const SECRET = process.env.CRAWL_SECRET;
 
@@ -9,7 +10,14 @@ export async function POST(req: NextRequest) {
   if (SECRET && req.headers.get("x-crawl-secret") !== SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { countries?: string[]; brands?: string[]; maxItemsPerBrand?: number; alerts?: boolean; leaflets?: boolean } = {};
+  let body: {
+    countries?: string[];
+    brands?: string[];
+    maxItemsPerBrand?: number;
+    alerts?: boolean;
+    leaflets?: boolean;
+    manuals?: boolean;
+  } = {};
   try {
     body = await req.json();
   } catch {}
@@ -27,7 +35,18 @@ export async function POST(req: NextRequest) {
       leafletNotifications = await evaluateLeafletOffers();
       await deliverPendingNotifications();
     }
-    return NextResponse.json({ ok: true, summary, notifications, leaflets: leafletSummary, leafletNotifications });
+    let manualSummary = null;
+    if (body.manuals === true) {
+      manualSummary = await fetchManuals({ countries: body.countries });
+    }
+    return NextResponse.json({
+      ok: true,
+      summary,
+      notifications,
+      leaflets: leafletSummary,
+      leafletNotifications,
+      manuals: manualSummary,
+    });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

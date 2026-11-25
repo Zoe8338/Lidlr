@@ -53,6 +53,10 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
     .slice(0, palette.length)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([cc, pts], i) => ({ cc, color: palette[i % palette.length], points: pts.slice(-120) }));
+  const manuals = await prisma.manual.findMany({
+    where: { erpNumber: erp },
+    orderBy: { id: "asc" },
+  });
   const fx = await getFxRates();
 
   return (
@@ -149,6 +153,38 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
 
       <h2 className="section">Price history by country</h2>
       <PriceChart series={chartSeries} />
+
+      {manuals.length ? (
+        <>
+          <h2 className="section">Manuals &amp; downloads</h2>
+          <table className="prices">
+            <tbody>
+              {manuals.map((m) => (
+                <tr key={m.id}>
+                  <td>
+                    {m.title}
+                    {m.language ? <span className="badge" style={{ marginLeft: 8 }}>{m.language}</span> : null}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                    {m.stored ? (
+                      <a href={`/api/manuals/${m.id}`} target="_blank" rel="noreferrer">
+                        Archived copy
+                      </a>
+                    ) : null}
+                    {" "}
+                    <a href={m.url} target="_blank" rel="noreferrer">
+                      Official ↗
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ color: "var(--muted)", fontSize: 12 }}>
+            &ldquo;Archived copy&rdquo; is stored on this server and stays up even if Lidl removes the original.
+          </p>
+        </>
+      ) : null}
     </div>
   );
 }

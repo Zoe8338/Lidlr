@@ -158,7 +158,7 @@ curl -X POST http://localhost:3000/api/crawl \
 |---|---|
 | `/` | Overview: tracked counts, brand families, latest deals, new arrivals |
 | `/products` | Search + filter by brand family, country, price sort |
-| `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, multi-country price-history chart, tracking popup (ParkPrice-style, editable) |
+| `/products/[erp]` | Product detail: gallery, per-country price table with ≈ EUR, cheapest country highlighted, multi-country price-history chart, tracking popup (ParkPrice-style, editable), manuals & downloads with archived copies |
 | `/deals` | Current promotions (deal of the day, flash sales, promo ribbons, old→new price drops) |
 | `/new` | Items first seen within the last 7/14/30/90 days |
 | `/archive` | Weekly leaflet (flyer) archive per country: covers, validity dates and stored PDFs |
@@ -228,6 +228,22 @@ links it to your catalog through the offer's ERP number. Offer data availability
 Lidl per country (currently rich in e.g. DE / FR / NL, empty in others). Tracked products that
 appear in a **current or upcoming** leaflet fire an in-leaflet notification (7-day dedupe, same
 caps), so you know your item is in this week's paper before you walk in.
+
+## Product manuals
+
+Many products (mostly tools: Parkside, Silvercrest, …) have official manuals on their Lidl product
+page ("Anleitungen & Downloads", served from `manuals.sit-connect.com`). Lidlr archives them:
+
+- A background pass (after the weekly crawl, or `npm run manuals -- --countries=DE --max=50`,
+  or `--manuals` on the crawl script / `{"manuals":true}` on `POST /api/crawl`) visits each
+  unchecked product's page, extracts every PDF download with its language, and stores a
+  **sha256-deduped copy in `data/manuals/`** (max `MANUAL_MAX_PER_PRODUCT` per product,
+  `MANUAL_MAX_PDF_MB` cap). `MANUAL_FETCH_PER_RUN` products are checked per run so regular
+  crawls stay fast; everything drains over a few runs.
+- The product page lists every manual with the **Official ↗** link plus an **Archived copy**
+  link (`/api/manuals/<id>`) served from your volume — the PDF stays available even if Lidl
+  or SIT takes the original down.
+- Products with no manuals are remembered (`manualCheckedAt`) and never re-fetched.
 
 ## Crawler mechanics (`src/lib/lidl/`)
 

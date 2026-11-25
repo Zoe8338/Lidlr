@@ -1,6 +1,7 @@
 import { runCrawl, evaluateTrackings } from "./lidl/crawler.ts";
 import { deliverPendingNotifications } from "./notify.ts";
 import { fetchLeaflets, evaluateLeafletOffers } from "./leaflets.ts";
+import { fetchManuals } from "./manuals.ts";
 
 const WEEKLY_MS = 7 * 24 * 3600 * 1000;
 const DAILY_MS = 24 * 3600 * 1000;
@@ -24,6 +25,7 @@ export function startScheduler() {
     await safe("leaflets", async () => fetchLeaflets());
     await safe("leaflet-offers", async () => evaluateLeafletOffers());
     await safe("notif-delivery-2", async () => deliverPendingNotifications());
+    await safe("manuals", async () => fetchManuals());
     return summary;
   });
   setTimeout(() => {
