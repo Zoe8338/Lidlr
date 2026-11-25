@@ -11,6 +11,7 @@
     "crawl": "node scripts/crawl.mjs",
     "parkprice": "node scripts/parkprice.mjs",
     "translate": "node scripts/translate.mjs",
+    "reconcile": "node scripts/reconcile.mjs",
     "prune": "node scripts/prune.mjs",
     "repair": "node scripts/repair.mjs",
     "refresh": "node scripts/refresh.mjs",

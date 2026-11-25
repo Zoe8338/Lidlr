@@ -6,6 +6,8 @@ services:
     build: .
     container_name: lidlr
     restart: unless-stopped
+    depends_on:
+      - libretranslate
     ports:
       - "3000:3000"
     volumes:
@@ -15,10 +17,18 @@ services:
       # Weekly full crawl + daily tracking evaluation run inside the container by default.
       # Set to "1" to disable the scheduler and drive crawls yourself.
       SCHEDULER_DISABLED: ""
-      # Auto-translate product titles (12 target languages supported by the
-      # translation endpoint; default target is English).
+      # Auto-translate titles + descriptions (default target English).
+      # Primary providers are the free Google endpoints (rate-limited); when they
+      # refuse, the bundled LibreTranslate sidecar below finishes the job. Point
+      # LIBRETRANSLATE_URL at any other instance, or set it empty to skip the
+      # sidecar (translation then depends on Google alone).
       AUTO_TRANSLATE: "${AUTO_TRANSLATE:-1}"
       TRANSLATE_TARGET: "${TRANSLATE_TARGET:-en}"
+      LIBRETRANSLATE_URL: "${LIBRETRANSLATE_URL-http://libretranslate:5000}"
+      LIBRETRANSLATE_API_KEY: "${LIBRETRANSLATE_API_KEY:-}"
+      # 24 h double-check pass: re-translates a rotating batch through Google
+      # and fixes stored values that don't match.
+      RECONCILE_LIMIT: "${RECONCILE_LIMIT:-}"
       # Session signing secret. Leave empty to auto-generate and persist one
       # in the data volume, or set your own random string.
       AUTH_SECRET: "${AUTH_SECRET:-}"
@@ -43,5 +53,24 @@ services:
       # Refuse PDFs larger than this (MB)
       LEAFLET_MAX_PDF_MB: "${LEAFLET_MAX_PDF_MB:-60}"
 
+
+  # Bundled translation engine (Argos models) — translations on your own box,
+  # no external rate limits. First start downloads the language models
+  # (~5 min, ~2 GB disk); they persist in the lt-models volume. RAM can be
+  # trimmed by listing fewer languages in LIBRETRANSLATE_LANGS.
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: lidlr-translate
+    restart: unless-stopped
+    environment:
+      LT_DISABLE_WEB_UI: "true"
+      LT_UPDATE_MODELS: "false"
+      # limit loaded models (RAM); extend via LIBRETRANSLATE_LANGS in .env,
+      # e.g. add hr,sl,el,lt,lv,et if you track those shops heavily
+      LT_LOAD_ONLY: "${LIBRETRANSLATE_LANGS:-en,de,fr,nl,it,es,pt,pl,cs,sk,hu,ro,bg,fi,sv,da}"
+    volumes:
+      - lt-models:/home/libretranslate/.local/share/argos-translate
+
 volumes:
   lidlr-data:
+  lt-models:

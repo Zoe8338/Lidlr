@@ -5,11 +5,13 @@ import { deliverPendingNotifications } from "./notify.ts";
 import { fetchLeaflets, evaluateLeafletOffers } from "./leaflets.ts";
 import { fetchManuals } from "./manuals.ts";
 import { fetchImages } from "./images.ts";
+import { reconcileTranslations } from "./reconcile.ts";
 
 const TICK_MS = 10 * 60 * 1000;
 const CRAWL_HOUR = Number(process.env.CRAWL_HOUR || 2); // local time of each shop
 const MIN_GAP_MS = 22 * 3600 * 1000;
 const LEAFLET_INTERVAL_MS = Number(process.env.LEAFLET_INTERVAL_MS || 12 * 3600 * 1000);
+const RECONCILE_INTERVAL_MS = Number(process.env.RECONCILE_INTERVAL_MS || 24 * 3600 * 1000);
 
 const TZ: Record<string, string> = {
   DE: "Europe/Berlin", AT: "Europe/Vienna", FR: "Europe/Paris", IT: "Europe/Rome",
@@ -45,6 +47,7 @@ function localHour(cc: string): number {
 const lastCrawl = new Map<string, number>();
 const lastLeafletFetch = new Map<string, number>();
 let lastLeaflets = 0;
+let lastReconcile = 0;
 let boot = true;
 let busy = false;
 
@@ -109,6 +112,12 @@ async function tick() {
       await safe("leaflets-daily", () => fetchLeaflets());
       await safe("leaflet-offers", () => evaluateLeafletOffers());
       await safe("notif-delivery-3", () => deliverPendingNotifications());
+    }
+    // translation double-check: every 24 h re-run a rotating batch through the
+    // primary Google endpoints and fix stored values that don't match
+    if (Date.now() - lastReconcile > RECONCILE_INTERVAL_MS) {
+      lastReconcile = Date.now();
+      await safe("reconcile-translations", () => reconcileTranslations());
     }
   } finally {
     busy = false;
