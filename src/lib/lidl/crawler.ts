@@ -257,11 +257,14 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
 
     if (countryItems.length) {
       const erps = countryItems.map((i) => i.erpNumber);
-      const withEn = await prisma.product.findMany({
-        where: { erpNumber: { in: erps }, titleEn: { not: null } },
-        select: { erpNumber: true },
-      });
-      const haveEn = new Set(withEn.map((p) => p.erpNumber));
+      const haveEn = new Set<string>();
+      for (let i = 0; i < erps.length; i += 500) {
+        const rows = await prisma.product.findMany({
+          where: { erpNumber: { in: erps.slice(i, i + 500) } },
+          select: { erpNumber: true, titleEn: true },
+        });
+        for (const r of rows) if (r.titleEn) haveEn.add(r.erpNumber);
+      }
       const pending = countryItems.filter((i) => !haveEn.has(i.erpNumber)).map((i) => i.title);
       const translations = await translateTitles(pending);
       for (const item of countryItems) {
