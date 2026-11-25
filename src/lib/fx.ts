@@ -1,4 +1,4 @@
-import { COUNTRIES } from "@/lib/lidl/catalog";
+import { COUNTRIES } from "./lidl/catalog.ts";
 
 const SYMBOLS = [...new Set(COUNTRIES.map((c) => c.currency).concat("EUR"))];
 const TTL_MS = 60 * 60 * 1000;

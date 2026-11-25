@@ -21,6 +21,7 @@ function headers(cc: CountryConfig) {
 
 export type LidlItem = {
   erpNumber: string;
+  ians?: string[];
   title: string;
   brandName?: string;
   brandSlug?: string;
@@ -46,6 +47,7 @@ type GridData = {
   title?: string;
   brand?: { name?: string };
   category?: string;
+  ians?: string[];
   canonicalUrl?: string;
   image?: string;
   imageList?: string[];
@@ -70,6 +72,7 @@ function parseItem(it: RawItem): LidlItem | null {
   const old = c.price?.oldPrice;
   return {
     erpNumber: String(erp),
+    ians: Array.isArray(c.ians) ? c.ians.map(String) : undefined,
     title: c.fullTitle || c.title || erp,
     brandName: c.brand?.name,
     category: c.category,
@@ -145,7 +148,9 @@ export async function brandItems(cc: CountryConfig, brandQuery: string, maxItems
   let offset = 0;
   let numFound = Infinity;
   while (offset < Math.min(numFound, maxItems)) {
-    const { numFound: found, items } = await searchPage({ country: cc, brand: brandQuery, offset, signal });
+    // use the keyword query, not the brand filter: several storefronts (PT etc.)
+    // ignore the brand= parameter entirely
+    const { numFound: found, items } = await searchPage({ country: cc, query: brandQuery, offset, signal });
     numFound = found;
     out.push(...items);
     offset += items.length || FETCHSIZE;

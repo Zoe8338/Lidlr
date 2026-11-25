@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { COUNTRIES } from "@/lib/lidl/catalog";
 import { fetchLeafletsAction } from "@/app/actions";
+import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function ArchivePage() {
               </div>
               <div className="meta">
                 {g._count._all} leaflet{g._count._all === 1 ? "" : "s"}
-                {latest ? ` · latest ${new Date(latest).toLocaleDateString()}` : ""}
+                {latest ? ` · latest ${fmtDate(latest)}` : ""}
               </div>
             </Link>
           );

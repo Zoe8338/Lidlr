@@ -80,3 +80,41 @@ export function slugifyBrand(raw: string | undefined | null): string | undefined
   if (/crivit/.test(s)) return "crivit";
   return s;
 }
+
+// Sub-lines within a brand family (Livarno Home, Parkside Performance, ...).
+// Key = family slug; values = selectable sub-line labels, first entry = family base.
+export const SUB_LINES: Record<string, string[]> = {
+  parkside: ["Parkside", "Parkside Performance"],
+  esmara: ["Esmara", "Esmara Men", "Esmara Lingerie"],
+  crivit: ["Crivit", "Crivit Performance", "Crivit by Jette Sport"],
+  silvercrest: ["Silvercrest", "Silvercrest Personal Care", "Silvercrest Kitchen Tools"],
+  livarno: ["Livarno", "Livarno Home", "Livarno Lux"],
+  cien: ["Cien", "Cien Men"],
+};
+
+const SUB_LINE_PATTERNS: Record<string, RegExp> = {
+  "Parkside Performance": /PARKSIDE[®\s-]*PERFORMANCE/,
+  "Esmara Men": /ESMARA[®\s-]*MEN/,
+  "Esmara Lingerie": /ESMARA[®\s-]*(LINGERIE|UNDIEZ|DAMENWASCHE|DAMENWÄSCHE)/,
+  "Crivit Performance": /CRIVIT[®\s-]*PERFORMANCE/,
+  "Crivit by Jette Sport": /CRIVIT[®\s-]*BY[®\s-]*JETTE/,
+  "Silvercrest Personal Care": /SILVERCREST[®\s-]*PERSONAL[®\s-]*CARE/,
+  "Silvercrest Kitchen Tools": /SILVERCREST[®\s-]*KITCHEN[®\s-]*TOOLS/,
+  "Livarno Home": /LIVARNO[®\s-]*(HOME|MAISON|HOGAR|CASA|HOGAR)/,
+  "Livarno Lux": /LIVARNO[®\s-]*LU[XE]/,
+  "Cien Men": /CIEN[®\s-]*MEN/,
+};
+
+// does a product belong to the given sub-line label? The family base label
+// ("Livarno") matches products without any specific sub-line.
+export function matchesSubLine(title: string | null | undefined, brandName: string | null | undefined, label: string, family?: string): boolean {
+  const hay = `${brandName ?? ""} ${title ?? ""}`.toUpperCase();
+  const specific = Object.keys(SUB_LINE_PATTERNS).filter((k) => k.startsWith(label));
+  if (label !== family && SUB_LINE_PATTERNS[label]) return SUB_LINE_PATTERNS[label].test(hay);
+  void specific;
+  // base label: family brand, but only when no specific sub-line of this family matches
+  const familyRe = SUB_LINES[family ?? ""];
+  const others = (familyRe ?? []).filter((l) => l !== (family ?? label));
+  const hasOther = others.some((l) => SUB_LINE_PATTERNS[l]?.test(hay));
+  return hay.includes(label.toUpperCase()) && !hasOther;
+}

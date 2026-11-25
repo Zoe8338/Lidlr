@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { convert, fmtEur, fmtLocal, type FxRates } from "@/lib/fx";
+import { fmtDate } from "@/lib/format";
 
-export type ChartPoint = { t: Date; price: number };
+export type ChartPoint = { t: Date; price: number; fxRate?: number | null };
 export type ChartSeries = { cc: string; currency: string; color: string; points: ChartPoint[] };
 
 function ChartSvg({
@@ -21,25 +22,32 @@ function ChartSvg({
   const h = height;
   const padL = 52;
   const pad = 28;
-  const toVal = (price: number, currency: string): number | null => {
+  const toVal = (price: number, currency: string, fxRate?: number | null): number | null => {
     if (mode === "local") return price;
+    // historical ECB rate stored on the snapshot, when the crawler captured one
+    if (fxRate && fxRate > 0) return price / fxRate;
     if (!currency) return null;
     return fx ? convert(price, currency, "EUR", fx) : currency === "EUR" ? price : null;
   };
   const batches = series.map((s) => ({
     s,
     pts: s.points
-      .map((p) => ({ t: p.t, v: toVal(p.price, s.currency) }))
+      .map((p) => ({ t: p.t, v: toVal(p.price, s.currency, p.fxRate) }))
       .filter((p): p is { t: Date; v: number } => p.v != null),
   }));
-  const usable = batches.filter((b) => b.pts.length >= 2);
+  const usable = batches.filter((b) => b.pts.length >= 1);
   if (!usable.length) return null;
   const all = usable.flatMap((b) => b.pts.map((p) => p.v));
   const min = Math.min(...all);
   const max = Math.max(...all);
   const span = max - min || 1;
-  const t0 = Math.min(...usable.map((b) => b.pts[0].t.getTime()));
-  const t1 = Math.max(...usable.map((b) => b.pts[b.pts.length - 1].t.getTime()));
+  let t0 = Math.min(...usable.map((b) => b.pts[0].t.getTime()));
+  let t1 = Math.max(...usable.map((b) => b.pts[b.pts.length - 1].t.getTime()));
+  if (t1 - t0 < 6 * 86400000) {
+    const mid = (t0 + t1) / 2;
+    t0 = mid - 3 * 86400000;
+    t1 = mid + 3 * 86400000;
+  }
   const spanT = t1 - t0 || 1;
   const x = (t: number) => padL + ((t - t0) / spanT) * (w - padL - pad);
   const y = (p: number) => h - pad - ((p - min) / span) * (h - 2 * pad);
@@ -68,14 +76,24 @@ function ChartSvg({
             </text>
           </g>
         ))}
-        {usable.map(({ s, pts }) => {
-          const line = pts.map((p) => `${x(p.t.getTime()).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
-          return (
-            <polyline key={s.cc} points={line} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />
-          );
-        })}
+        {usable.map(({ s, pts }) => (
+          <g key={s.cc}>
+            {pts.length >= 2 ? (
+              <polyline
+                points={pts.map((p) => `${x(p.t.getTime()).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")}
+                fill="none"
+                stroke={s.color}
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+            ) : null}
+            {pts.map((p, i) => (
+              <circle key={i} cx={x(p.t.getTime())} cy={y(p.v)} r={2.6} fill={s.color} />
+            ))}
+          </g>
+        ))}
         <text x={padL} y={12} fill="var(--muted)" fontSize="11">
-          {new Date(t0).toLocaleDateString()} → {new Date(t1).toLocaleDateString()}
+          {fmtDate(t0)} → {fmtDate(t1)}
         </text>
       </svg>
       <div className="chart-legend">
@@ -100,7 +118,7 @@ export function PriceChart({
   height?: number;
 }) {
   const [mode, setMode] = useState<"eur" | "local">("eur");
-  const usable = series.filter((s) => s.points.length >= 2);
+  const usable = series.filter((s) => s.points.length >= 1);
   if (!usable.length) {
     return <div className="empty">Not enough price history yet — snapshots collect as the crawler re-runs.</div>;
   }
@@ -125,8 +143,8 @@ export function PriceChart({
       ))}
       {mode === "eur" ? (
         <p style={{ color: "var(--muted)", fontSize: 12, margin: "4px 0 0" }}>
-          Lines are converted to EUR at the current ECB reference rate (historical rates are not captured per
-          snapshot). Switch to “Local” to see each country in its own currency.
+          Lines are converted to EUR using the ECB reference rate stored on each crawl; older snapshots without a
+          stored rate fall back to today’s rate. Switch to “Local” to see each country in its own currency.
         </p>
       ) : null}
     </div>

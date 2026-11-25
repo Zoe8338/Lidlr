@@ -4,6 +4,7 @@ import { currentUser } from "@/lib/auth";
 import { emailConfigured } from "@/lib/mail";
 import { toggleTrack, saveTarget, saveNotifSettings, deleteAccount } from "@/app/actions";
 import { ProductCard } from "@/components/ProductCard";
+import { fmtDate, fmtDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export default async function TrackingPage() {
                   </button>
                 </form>
                 <div className="track-info">
-                  Tracked since {new Date(t.createdAt).toLocaleDateString()}
+                  Tracked since {fmtDate(t.createdAt)}
                   {bestByErp.get(t.erpNumber)
                     ? ` · best now ${bestByErp.get(t.erpNumber)!.price.toFixed(2)} (${bestByErp.get(t.erpNumber)!.cc})`
                     : ""}
@@ -129,7 +130,7 @@ export default async function TrackingPage() {
           <tbody>
             {notifications.map((n) => (
               <tr key={n.id}>
-                <td>{new Date(n.createdAt).toLocaleString()}</td>
+                <td>{fmtDateTime(n.createdAt)}</td>
                 <td>
                   {n.message}
                 </td>
@@ -202,7 +203,7 @@ export default async function TrackingPage() {
       <h2 className="section">Account</h2>
       <div className="card" style={{ maxWidth: 560 }}>
         <div style={{ marginBottom: 12 }}>
-          Signed in as <strong>{user.email}</strong> — since {new Date(user.createdAt).toLocaleDateString()}.
+          Signed in as <strong>{user.email}</strong> — since {fmtDate(user.createdAt)}.
         </div>
         <form action={deleteAccount}>
           <button className="button danger" type="submit">

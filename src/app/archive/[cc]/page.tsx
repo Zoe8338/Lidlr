@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { COUNTRIES } from "@/lib/lidl/catalog";
+import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ function fmtSize(bytes: number | null): string {
 
 function fmtRange(from: Date | null, until: Date | null, fallback: string | null): string {
   if (from && until)
-    return `${new Date(from).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} – ${new Date(until).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+    return `${fmtDate(from)} – ${fmtDate(until)}`;
   return fallback ?? "";
 }
 

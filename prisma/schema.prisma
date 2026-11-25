@@ -20,6 +20,8 @@ model Country {
 
 model Product {
   erpNumber     String         @id
+  // Lidl IAN article numbers (e.g. ["494209"]) captured from the search API
+  ians          String?
   title         String
   titleEn       String?
   brandName     String?
@@ -72,6 +74,8 @@ model Snapshot {
   oldPrice    Float?
   available   Boolean?
   promo       String?
+  // ECB reference rate EUR->local currency on takenAt (null = unknown, use current rate)
+  fxRate      Float?
   takenAt     DateTime @default(now())
 
   @@index([listingId, takenAt])

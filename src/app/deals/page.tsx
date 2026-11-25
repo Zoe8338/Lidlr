@@ -6,6 +6,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { FilterButton, SortButton, ParamSelect, ViewToggle } from "@/components/Filters";
 import { parsePriceOp, one, many } from "@/lib/search";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
+import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +96,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
           online: null,
           date: lf.validFrom ?? lf.fetchedAt,
           valid: [lf.validFrom, lf.validUntil].every(Boolean)
-            ? `${new Date(lf.validFrom!).toLocaleDateString()} – ${new Date(lf.validUntil!).toLocaleDateString()}`
+            ? `${fmtDate(lf.validFrom!)} – ${fmtDate(lf.validUntil!)}`
             : null,
         };
       }),
@@ -186,7 +187,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
       <h1 style={{ margin: "24px 0 4px" }}>Sales</h1>
       <p style={{ color: "var(--muted)" }}>
         {week === "next"
-          ? `${total} announced offers from next week's leaflets (${new Date(nextWeekStart).toLocaleDateString()} onwards).`
+          ? `${total} announced offers from next week's leaflets (${fmtDate(nextWeekStart)} onwards).`
           : `${total} current in-store deals${week === "this" ? " — this week's leaflets and price drops" : ""}.`}
       </p>
 
@@ -281,7 +282,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
         <div className="empty">
           {week === "this" ? (
             <>
-              No deals captured since {thisWeekStart.toLocaleDateString()} — the crawler updates during the week.{" "}
+              No deals captured since {thisWeekStart} — the crawler updates during the week.{" "}
               <Link href={qs({ week: "all" })}>Show all current deals</Link>.
             </>
           ) : (
@@ -347,7 +348,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
                   )}
                   <td>{d.countryCode}</td>
                   {week === "next" ? null : <td>{d.promo || ""}</td>}
-                  <td>{new Date(d.date).toLocaleDateString()}</td>
+                  <td>{fmtDate(d.date)}</td>
                 </tr>
               ))}
             </tbody>

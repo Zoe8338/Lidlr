@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { BRANDS, COUNTRIES, slugifyBrand, type CountryConfig } from "./catalog.ts";
 import { brandItems, type LidlItem } from "./client.ts";
 import { translateTitles, translationEnabled } from "../translate.ts";
+import { getFxRates, type FxRates } from "../fx.ts";
 
 const prisma = new PrismaClient();
 
@@ -23,6 +24,15 @@ export type CrawlSummary = {
 
 const DELAY_MS = Number(process.env.CRAWL_DELAY_MS || 400);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let fxCache: FxRates | null = null;
+// rate such that local = EUR x fxRate (ECB reference at crawl time; 1 for the euro area)
+async function fxRateFor(currency?: string): Promise<number | null> {
+  if (!currency) return null;
+  if (currency === "EUR") return 1;
+  if (!fxCache) fxCache = await getFxRates();
+  return fxCache?.rates[currency] ?? null;
+}
 
 function promoLabel(item: LidlItem): string | undefined {
   if (item.dealOfDay) return "Deal of the day" + (item.promo ? ` | ${item.promo}` : "");
@@ -60,10 +70,11 @@ async function upsertItem(item: LidlItem, cc: CountryConfig, translations: Map<s
 
   await prisma.product.upsert({
     where: { erpNumber: item.erpNumber },
-    update: { ...productData, ...(titleEn ? { titleEn } : {}) },
+    update: { ...productData, ...(titleEn ? { titleEn } : {}), ...(item.ians?.length ? { ians: JSON.stringify(item.ians) } : {}) },
     create: {
       erpNumber: item.erpNumber,
       ...productData,
+      ...(item.ians?.length ? { ians: JSON.stringify(item.ians) } : {}),
       category: item.category,
       imageUrl: item.imageUrl,
       images: item.images?.length ? JSON.stringify(item.images.slice(0, 4)) : undefined,
@@ -103,6 +114,7 @@ async function upsertItem(item: LidlItem, cc: CountryConfig, translations: Map<s
       oldPrice: item.oldPrice,
       available: item.stockOk,
       promo: promoLabel(item),
+      fxRate: await fxRateFor(item.currency ?? cc.currency),
     },
   });
 

@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { prisma } from "@/lib/db";
-import { BRANDS, COUNTRIES } from "@/lib/lidl/catalog";
+import { BRANDS, COUNTRIES, SUB_LINES, matchesSubLine } from "@/lib/lidl/catalog";
 import { ProductCard, type CardListing } from "@/components/ProductCard";
-import { FilterButton, SortButton, ParamSelect, ViewToggle } from "@/components/Filters";
+import { FilterButton, SortButton, ParamSelect, ViewToggle, BrandSubLine } from "@/components/Filters";
 import { buildWhereForSearch, parsePriceOp, one, many } from "@/lib/search";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
+import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
   const q = one(sp, "q")?.trim();
   const code = one(sp, "code")?.trim();
   const brands = many(sp, "brand");
+  const subline = one(sp, "subline")?.trim() ?? "";
   const cats = many(sp, "cat");
   const country = one(sp, "country");
   const price = parsePriceOp(one(sp, "price"));
@@ -88,10 +90,16 @@ export default async function Products({ searchParams }: { searchParams: Promise
       .filter((x): x is { l: (typeof listings)[number]; eur: number } => x.eur != null && Number.isFinite(x.eur));
     const best = priced.length ? priced.sort((a, b) => a.eur - b.eur)[0] : undefined;
     const onlineState = listings.some((l) => l.online) ? "yes" : listings.every((l) => l.online === false) ? "no" : "unknown";
-    return { p, best, onlineState };
+    return { p, best, onlineState, inCountry: listings.length > 0 };
   });
 
-  const filtered = rows.filter(({ best, onlineState }) => {
+  const scoped = country ? rows.filter((r) => r.inCountry) : rows;
+
+  const afterSubline = subline && brands.length === 1
+    ? scoped.filter(({ p }) => matchesSubLine(p.titleEn ? `${p.title} ${p.titleEn}` : p.title, p.brandName, subline, brands[0]))
+    : scoped;
+
+  const filtered = afterSubline.filter(({ best, onlineState }) => {
     if (offer === "yes" && !(best?.l.promo || best?.l.oldPrice)) return false;
     if (offer === "no" && (best?.l.promo || best?.l.oldPrice)) return false;
     if (online === "yes" && onlineState !== "yes") return false;
@@ -121,7 +129,8 @@ export default async function Products({ searchParams }: { searchParams: Promise
   const activeFilters =
     (q ? 1 : 0) +
     (code ? 1 : 0) +
-    brands.length +
+    (brands.length ? 1 : 0) +
+    (subline ? 1 : 0) +
     cats.length +
     (country ? 1 : 0) +
     (price ? 1 : 0) +
@@ -137,6 +146,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
     q,
     code,
     brand: brands.join(","),
+    subline,
     cat: cats.join(","),
     country,
     price: one(sp, "price"),
@@ -168,40 +178,12 @@ export default async function Products({ searchParams }: { searchParams: Promise
         </form>
         <Suspense fallback={null}>
           <FilterButton active={activeFilters} hidden={{ view, ps }} resetParams={["sortcol", "sortdir", "view", "ps"]}>
-            <label className="field">
-              <span>Code (ERP)</span>
-              <input type="text" name="code" defaultValue={code || ""} placeholder="e.g. 100414316" />
-            </label>
-            <label className="field">
-              <span>Name</span>
-              <input type="text" name="q" defaultValue={q || ""} placeholder="any word, any language" />
-            </label>
-            <label className="field">
-              <span>Brand (multiple)</span>
-              <select name="brand" multiple defaultValue={brands} size={5}>
-                {[...new Map(BRANDS.map((b) => [b.family, b])).keys()].map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Category (multiple)</span>
-              <select name="cat" multiple defaultValue={cats} size={6} className="cat-select">
-                {catRows.map((c) => (
-                  <option key={c.category} value={c.category ?? ""}>
-                    {c.category} ({c._count._all})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Price (EUR) — use &lt; or &gt; operators (e.g. &lt;100 or &gt;50)</span>
-              <input type="text" name="price" defaultValue={one(sp, "price") || ""} />
-            </label>
-            {tri("offer", offer)}
-            {tri("online", online)}
+            <BrandSubLine
+              families={[...new Map(BRANDS.map((b) => [b.family, b])).keys()]}
+              subLines={SUB_LINES}
+              brand={brands[0] ?? ""}
+              subline={subline}
+            />
             <label className="field">
               <span>Country</span>
               <select name="country" defaultValue={country || ""}>
@@ -213,9 +195,40 @@ export default async function Products({ searchParams }: { searchParams: Promise
                 ))}
               </select>
             </label>
+            <details style={{ margin: "4px 0 10px" }}>
+              <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, fontSize: 13 }}>
+                More filters
+              </summary>
+              <div style={{ marginTop: 10 }}>
+                <label className="field">
+                  <span>Name</span>
+                  <input type="text" name="q" defaultValue={q || ""} placeholder="any word, any language" />
+                </label>
+                <label className="field">
+                  <span>Code (ERP)</span>
+                  <input type="text" name="code" defaultValue={code || ""} placeholder="e.g. 100414316" />
+                </label>
+                <label className="field">
+                  <span>Category (multiple)</span>
+                  <select name="cat" multiple defaultValue={cats} size={6} className="cat-select">
+                    {catRows.map((c) => (
+                      <option key={c.category} value={c.category ?? ""}>
+                        {c.category} ({c._count._all})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Price (EUR) — use &lt; or &gt; operators (e.g. &lt;100 or &gt;50)</span>
+                  <input type="text" name="price" defaultValue={one(sp, "price") || ""} />
+                </label>
+                {tri("offer", offer)}
+                {tri("online", online)}
+              </div>
+            </details>
           </FilterButton>
           <SortButton
-            hidden={{ q, code, brand: brands.join(","), cat: cats.join(","), country }}
+            hidden={{ q, code, brand: brands.join(","), cat: cats.join(","), country, subline }}
             columns={[
               { value: "price", label: "Price (EUR)" },
               { value: "name", label: "Name" },
@@ -277,7 +290,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
                       ? fmtLocal(best.l.currentPrice, best.l.currency)
                       : ""}
                   </td>
-                  <td>{new Date(p.lastSeen).toLocaleDateString()}</td>
+                  <td>{fmtDate(p.lastSeen)}</td>
                 </tr>
               ))}
             </tbody>

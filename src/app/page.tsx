@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { BRANDS, COUNTRIES } from "@/lib/lidl/catalog";
 import { ProductCard } from "@/components/ProductCard";
+import { fmtDate, fmtDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,7 @@ export default async function Home() {
 
       <p className="notice" style={{ marginTop: 30 }}>
         {lastRun
-          ? `Crawl in progress (${new Date(lastRun.startedAt).toLocaleString()}).`
+          ? `Crawl in progress (${fmtDateTime(lastRun.startedAt)}).`
           : "Create a free account and track products — we'll email or WhatsApp you on price drops, restocks and sales."}
       </p>
     </div>

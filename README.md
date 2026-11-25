@@ -108,9 +108,32 @@ Google-translate community endpoint — no key, no dependency. Translations are:
 
 - stored in `Product.titleEn` and cached in-process per title,
 - shown on product cards (original underneath) and product pages,
-- backfilled on the next crawl for products already in the DB (one-time).
+- backfilled on the next crawl for products already in the DB (one-time),
+- optionally enriched with ParkPrice's English titles via the importer below.
 
 Failures degrade silently — the original name is kept and retried next run.
+
+### ParkPrice catalog import (optional)
+
+`npm run parkprice` walks park-price.com's sitemaps (politely: single-threaded,
+3 s between requests, resumable) and imports **product metadata only** — English
+titles, IAN article numbers, images — for products we also track. Lidl IANs map
+ParkPrice pages to our ERP numbers, so an exact match is only recorded when the
+IAN is known (crawls fill `Product.ians`); everything else is skipped.
+Price/sales history is not imported (anonymous ParkPrice data is geo-scoped).
+
+```bash
+# inside the container, against the live database
+docker compose exec lidlr npm run parkprice -- --max=500
+
+# dry run / probe a few pages / full pass
+npm run parkprice -- --dry-run
+npm run parkprice -- --probe=20
+npm run parkprice
+```
+
+Progress is stored in `data/parkprice-progress.json`, so an interrupted run
+resumes where it stopped. Re-run after new crawls to pick up newly matched IANs.
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
 shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `RESEND_API_KEY`, `SITE_URL`,

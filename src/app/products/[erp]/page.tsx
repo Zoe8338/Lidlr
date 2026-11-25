@@ -8,6 +8,7 @@ import { Gallery } from "@/components/Gallery";
 import { TrackDialog } from "@/components/TrackDialog";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 import { emailConfigured } from "@/lib/mail";
+import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -58,15 +59,15 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
         where: { userId_erpNumber: { userId: user.id, erpNumber: erp } },
       })
     : null;
-  const historyByCountry = new Map<string, { t: Date; price: number }[]>();
+  const historyByCountry = new Map<string, { t: Date; price: number; fxRate: number | null }[]>();
   for (const s of snapshots) {
     const list = historyByCountry.get(s.countryCode) ?? [];
-    list.push({ t: s.takenAt, price: s.price! });
+    list.push({ t: s.takenAt, price: s.price!, fxRate: s.fxRate });
     historyByCountry.set(s.countryCode, list);
   }
   const palette = ["#0e62c4", "#d97706", "#178a3e", "#8b5cf6", "#d43f3f", "#0891b2"];
   const chartSeries = [...historyByCountry.entries()]
-    .filter(([, pts]) => pts.length >= 2)
+    .filter(([, pts]) => pts.length >= 1)
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, palette.length)
     .sort((a, b) => a[0].localeCompare(b[0]))
@@ -92,7 +93,7 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
             <p style={{ color: "var(--accent)", marginTop: 0, fontWeight: 600 }}>{product.titleEn}</p>
           ) : null}
           <p style={{ color: "var(--muted)", marginTop: 0 }}>
-            {product.brandName} · ERP {product.erpNumber} · first seen {new Date(product.firstSeen).toLocaleDateString()}
+            {product.brandName} · ERP {product.erpNumber} · first seen {fmtDate(product.firstSeen)}
           </p>
           {best && best.currentPrice != null ? (
             <p className="best-strip">
@@ -187,7 +188,7 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
                   </td>
                   <td>{l.stockOk ? (l.stockText ?? "in stock") : l.stockText || "out of stock"}</td>
                   <td>{l.promo || ""}</td>
-                  <td>{l.priceUpdatedAt ? new Date(l.priceUpdatedAt).toLocaleDateString() : ""}</td>
+                  <td>{l.priceUpdatedAt ? fmtDate(l.priceUpdatedAt) : ""}</td>
                   <td>
                     {l.url ? (
                       <a href={l.url} target="_blank" rel="noreferrer">

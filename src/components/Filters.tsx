@@ -76,7 +76,7 @@ export function FilterButton({
   );
 }
 
-// ParkPrice-style "Sort" button -> modal with column + ascending/descending.
+// ParkPrice-style "Order" button -> modal with column + ascending/descending.
 export function SortButton({
   columns,
   hidden = {},
@@ -90,17 +90,17 @@ export function SortButton({
   const dir = sp.get("sortdir") || "asc";
   return (
     <>
-      <button type="button" className="pp-btn" onClick={() => setOpen(true)} aria-label="Sort">
+      <button type="button" className="pp-btn" onClick={() => setOpen(true)} aria-label="Order">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
           <path d="M2 3h9l-3 3H2zM2 7h6L5 10H2zM2 11h3l-2 3H2z" transform="rotate(90 8 8)" />
         </svg>
-        Sort
+        Order
       </button>
       {open ? (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
           <div className="modal-card" style={{ maxWidth: 380 }}>
             <div className="modal-head">
-              <span>Sort</span>
+              <span>Listing order</span>
               <button type="button" className="modal-close" onClick={() => setOpen(false)} aria-label="Close">
                 ×
               </button>
@@ -182,5 +182,67 @@ export function ViewToggle({ view }: { view: "table" | "cards" }) {
         </svg>
       )}
     </button>
+  );
+}
+
+// Brand → Sub-line filter group: the sub-line select adapts to the chosen
+// brand family and is greyed out (disabled) when the brand has no sub-lines
+// (or when no brand is selected yet).
+export function BrandSubLine({
+  families,
+  subLines,
+  brand,
+  subline,
+}: {
+  families: string[];
+  subLines: Record<string, string[]>;
+  brand: string;
+  subline: string;
+}) {
+  const [family, setFamily] = useState(brand);
+  const [sub, setSub] = useState(subline);
+  const options = family ? (subLines[family] ?? null) : null;
+  const activeSub = options?.includes(sub) ? sub : "";
+  return (
+    <div className="field-grid">
+      <label className="field">
+        <span>Brand</span>
+        <select
+          name="brand"
+          value={family}
+          onChange={(e) => {
+            setFamily(e.target.value);
+            setSub("");
+          }}
+        >
+          <option value="">Any brand</option>
+          {families.map((f) => (
+            <option key={f} value={f}>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field" style={{ opacity: options ? 1 : 0.45 }}>
+        <span>Sub-line</span>
+        <select
+          name="subline"
+          value={activeSub}
+          disabled={!options}
+          onChange={(e) => setSub(e.currentTarget.value)}
+          aria-disabled={!options}
+        >
+          {options === null ? (
+            <option value="">{family ? "No sub-lines" : "Choose a brand first"}</option>
+          ) : (
+            options.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))
+          )}
+        </select>
+      </label>
+    </div>
   );
 }
