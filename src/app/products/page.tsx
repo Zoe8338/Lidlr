@@ -1,174 +1,305 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { prisma } from "@/lib/db";
 import { BRANDS, COUNTRIES } from "@/lib/lidl/catalog";
 import { ProductCard, type CardListing } from "@/components/ProductCard";
-import { buildWhereForSearch } from "@/lib/search";
-import { convert, getFxRates } from "@/lib/fx";
+import { FilterButton, SortButton, ParamSelect, ViewToggle } from "@/components/Filters";
+import { buildWhereForSearch, parsePriceOp, one, many } from "@/lib/search";
+import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Products — Lidlr",
   description:
-    "Browse and search every tracked Lidl own-brand product — Parkside, Esmara, Crivit, Cien, SilverCrest, Livarno, Livery, Dentalux — with per-country prices in EUR.",
+    "Browse and search every tracked Lidl own-brand product — Parkside, Esmara, Crivit, Cien, SilverCrest, Livarno, Livery, Dentalux — with per-country prices in EUR. Filter by code, name, brand, category, price, offer and availability.",
 };
 
-const PAGE_SIZE = 24;
 const MAX_SCAN = 3000;
 
-
-async function fetchProducts(where: Record<string, unknown>) {
-  return prisma.product.findMany({
-    where,
-    include: { listings: true },
-    orderBy: { lastSeen: "desc" },
-    take: MAX_SCAN,
-  });
+function tri(name: string, value: string) {
+  return (
+    <label className="field">
+      <span>{name}</span>
+      <select name={name} defaultValue={value || "unknown"}>
+        <option value="unknown">Unknown</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </label>
+  );
 }
 
-export default async function Products({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    q?: string;
-    brand?: string;
-    country?: string;
-    min?: string;
-    max?: string;
-    stock?: string;
-    sale?: string;
-    page?: string;
-    sort?: string;
-  }>;
-}) {
+type Sp = Record<string, string | string[] | undefined>;
+
+export default async function Products({ searchParams }: { searchParams: Promise<Sp> }) {
   const sp = await searchParams;
-  const q = sp.q?.trim();
-  const brand = sp.brand;
-  const country = sp.country;
-  const min = sp.min ? Number(sp.min) : null;
-  const max = sp.max ? Number(sp.max) : null;
-  const inStock = sp.stock === "1";
-  const onSale = sp.sale === "1";
-  const page = Math.max(1, Number(sp.page || 1));
-  const sort = ["relevance", "price_asc", "price_desc", "name"].includes(sp.sort || "") ? sp.sort! : "relevance";
+  const q = one(sp, "q")?.trim();
+  const code = one(sp, "code")?.trim();
+  const brands = many(sp, "brand");
+  const cats = many(sp, "cat");
+  const country = one(sp, "country");
+  const price = parsePriceOp(one(sp, "price"));
+  const offer = one(sp, "offer") ?? "unknown";
+  const online = one(sp, "online") ?? "unknown";
+  const sortcol = ["name", "price", "date"].includes(one(sp, "sortcol") || "") ? one(sp, "sortcol")! : "date";
+  const sortdir = (one(sp, "sortdir") || "desc") === "asc" ? "asc" : "desc";
+  const view = one(sp, "view") === "cards" ? "cards" : "table";
+  const ps = one(sp, "ps") ?? "24";
+  const pageSize = ps === "all" ? MAX_SCAN : Math.max(10, Math.min(200, Number(ps) || 24));
+  const page = Math.max(1, Number(one(sp, "page") || 1));
 
-  const family = BRANDS.find((b) => b.family === brand);
-  const brandSlugs = family ? BRANDS.filter((b) => b.family === brand).map((b) => b.slug) : undefined;
+  const brandSlugs = brands.length ? BRANDS.filter((b) => brands.includes(b.family)).map((b) => b.slug) : undefined;
 
-  const where = {
+  const dbWhere = {
     removed: false,
     ...(brandSlugs ? { brandSlug: { in: brandSlugs } } : {}),
+    ...(cats.length ? { category: { in: cats } } : {}),
+    ...(code ? { erpNumber: { contains: code } } : {}),
     ...(buildWhereForSearch(q) ?? {}),
   };
 
-  const [products, fx] = await Promise.all([fetchProducts(where), getFxRates()]);
+  const [products, fx, catRows] = await Promise.all([
+    prisma.product.findMany({
+      where: dbWhere,
+      include: { listings: true },
+      orderBy: { lastSeen: "desc" },
+      take: MAX_SCAN,
+    }),
+    getFxRates(),
+    prisma.product.groupBy({
+      by: ["category"],
+      where: { removed: false, category: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { category: "desc" } },
+      take: 60,
+    }),
+  ]);
 
-  const withEur = products.map((p) => {
+  const rows = products.map((p) => {
     const listings = (country ? p.listings.filter((l) => l.countryCode === country) : p.listings).filter(
       (l) => l.currentPrice != null,
     );
-    const best = listings
+    const priced = listings
       .map((l) => ({
         l,
         eur: fx ? (l.currency ? convert(l.currentPrice!, l.currency, "EUR", fx) : l.currentPrice) : l.currentPrice!,
       }))
-      .filter((x) => x.eur != null && Number.isFinite(x.eur))
-      .sort((a, b) => a.eur! - b.eur!)[0];
-    return { p, best: best?.l as CardListing | undefined, bestEur: best?.eur ?? null };
+      .filter((x): x is { l: (typeof listings)[number]; eur: number } => x.eur != null && Number.isFinite(x.eur));
+    const best = priced.length ? priced.sort((a, b) => a.eur - b.eur)[0] : undefined;
+    const onlineState = listings.some((l) => l.online) ? "yes" : listings.every((l) => l.online === false) ? "no" : "unknown";
+    return { p, best, onlineState };
   });
 
-  let rows = withEur;
-  if (inStock) rows = rows.filter((r) => r.best?.stockOk);
-  if (onSale) rows = rows.filter((r) => r.best?.promo || r.best?.oldPrice);
-  if (min != null && Number.isFinite(min)) rows = rows.filter((r) => r.bestEur != null && r.bestEur >= min);
-  if (max != null && Number.isFinite(max)) rows = rows.filter((r) => r.bestEur != null && r.bestEur <= max);
-  if (sort === "price_asc") rows = [...rows].sort((a, b) => (a.bestEur ?? Infinity) - (b.bestEur ?? Infinity));
-  else if (sort === "price_desc") rows = [...rows].sort((a, b) => (b.bestEur ?? -1) - (a.bestEur ?? -1));
-  else if (sort === "name") rows = [...rows].sort((a, b) => (a.p.titleEn ?? a.p.title).localeCompare(b.p.titleEn ?? b.p.title));
+  const filtered = rows.filter(({ best, onlineState }) => {
+    if (offer === "yes" && !(best?.l.promo || best?.l.oldPrice)) return false;
+    if (offer === "no" && (best?.l.promo || best?.l.oldPrice)) return false;
+    if (online === "yes" && onlineState !== "yes") return false;
+    if (online === "no" && onlineState === "yes") return false;
+    if (price?.min != null && best && best.eur < price.min) return false;
+    if (price?.max != null && best && best.eur > price.max) return false;
+    return true;
+  });
 
-  const total = rows.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const nameOf = (r: (typeof rows)[number]) => (r.p.titleEn ?? r.p.title).toLowerCase();
+  const sorted = filtered.slice().sort((a, b) => {
+    if (sortcol === "name") return sortdir === "asc" ? nameOf(a).localeCompare(nameOf(b)) : nameOf(b).localeCompare(nameOf(a));
+    if (sortcol === "price") {
+      const av = a.best?.eur ?? Infinity;
+      const bv = b.best?.eur ?? Infinity;
+      return sortdir === "asc" ? av - bv : bv - av;
+    }
+    const ad = new Date(a.p.lastSeen).getTime();
+    const bd = new Date(b.p.lastSeen).getTime();
+    return sortdir === "asc" ? ad - bd : bd - ad;
+  });
+
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageRows = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+  const activeFilters =
+    (q ? 1 : 0) +
+    (code ? 1 : 0) +
+    brands.length +
+    cats.length +
+    (country ? 1 : 0) +
+    (price ? 1 : 0) +
+    (offer !== "unknown" ? 1 : 0) +
+    (online !== "unknown" ? 1 : 0);
 
   const qs = (o: Record<string, string | number | undefined>) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== "") p.set(k, String(v));
     return `/products?${p.toString()}`;
   };
-  const extraParams = { q, brand, country, min: sp.min, max: sp.max, stock: inStock ? "1" : "", sale: onSale ? "1" : "", sort };
+  const stateParams = () => ({
+    q,
+    code,
+    brand: brands.join(","),
+    cat: cats.join(","),
+    country,
+    price: one(sp, "price"),
+    offer: offer === "unknown" ? "" : offer,
+    online: online === "unknown" ? "" : online,
+    sortcol,
+    sortdir,
+    view,
+    ps,
+  });
 
   return (
     <div>
       <h1 style={{ margin: "24px 0 4px" }}>Products</h1>
-      <p style={{ color: "var(--muted)" }}>
-        {total} product{total === 1 ? "" : "s"} match your filters. Primary price is the EUR equivalent; the local
-        shop currency is shown underneath.
-      </p>
+      <p style={{ color: "var(--muted)" }}>{total} products. Primary price is EUR; the local shop currency is in the Local column.</p>
 
-      <form className="toolbar" method="get">
-        <input name="q" placeholder="Search: screwdriver, wasserkocher, aspirador…" defaultValue={q || ""} />
-        <select name="brand" defaultValue={brand || ""}>
-          <option value="">All brands</option>
-          {[...new Map(BRANDS.map((b) => [b.family, b])).keys()].map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <select name="country" defaultValue={country || ""}>
-          <option value="">All countries</option>
-          {COUNTRIES.filter((c) => c.enabled).map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.name} ({c.code})
-            </option>
-          ))}
-        </select>
-        <input type="number" step="0.01" min="0" name="min" placeholder="Min €" style={{ maxWidth: 110 }} defaultValue={sp.min || ""} />
-        <input type="number" step="0.01" min="0" name="max" placeholder="Max €" style={{ maxWidth: 110 }} defaultValue={sp.max || ""} />
-        <select name="sort" defaultValue={sort}>
-          <option value="relevance">Newest first</option>
-          <option value="name">Name A–Z</option>
-          <option value="price_asc">Price: low → high</option>
-          <option value="price_desc">Price: high → low</option>
-        </select>
-        <label className="check" style={{ margin: 0 }}>
-          <input type="checkbox" name="stock" value="1" defaultChecked={inStock} /> In stock
-        </label>
-        <label className="check" style={{ margin: 0 }}>
-          <input type="checkbox" name="sale" value="1" defaultChecked={onSale} /> On sale
-        </label>
-        <button type="submit">Filter</button>
-      </form>
+      <div className="pp-bar">
+        <form method="get" action="/products" className="pp-search">
+          <input type="hidden" name="sortcol" value={sortcol} />
+          <input type="hidden" name="sortdir" value={sortdir} />
+          <input type="hidden" name="view" value={view} />
+          <input type="hidden" name="ps" value={ps} />
+          <input type="search" name="q" placeholder="Search name (screwdriver, wasserkocher…)" defaultValue={q || ""} aria-label="Search" />
+          <button type="submit" className="pp-btn" aria-label="Search">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+              <path d="M11.7 10.3a6 6 0 1 0-1.4 1.4l3.5 3.5 1.4-1.4zM6.5 10.5a4 4 0 1 1 0-8 4 4 0 0 1 0 8" />
+            </svg>
+          </button>
+        </form>
+        <Suspense fallback={null}>
+          <FilterButton active={activeFilters} hidden={{ view, ps }} resetParams={["sortcol", "sortdir", "view", "ps"]}>
+            <label className="field">
+              <span>Code (ERP)</span>
+              <input type="text" name="code" defaultValue={code || ""} placeholder="e.g. 100414316" />
+            </label>
+            <label className="field">
+              <span>Name</span>
+              <input type="text" name="q" defaultValue={q || ""} placeholder="any word, any language" />
+            </label>
+            <label className="field">
+              <span>Brand (multiple)</span>
+              <select name="brand" multiple defaultValue={brands} size={5}>
+                {[...new Map(BRANDS.map((b) => [b.family, b])).keys()].map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Category (multiple)</span>
+              <select name="cat" multiple defaultValue={cats} size={6} className="cat-select">
+                {catRows.map((c) => (
+                  <option key={c.category} value={c.category ?? ""}>
+                    {c.category} ({c._count._all})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Price (EUR) — use &lt; or &gt; operators (e.g. &lt;100 or &gt;50)</span>
+              <input type="text" name="price" defaultValue={one(sp, "price") || ""} />
+            </label>
+            {tri("offer", offer)}
+            {tri("online", online)}
+            <label className="field">
+              <span>Country</span>
+              <select name="country" defaultValue={country || ""}>
+                <option value="">Any</option>
+                {COUNTRIES.filter((c) => c.enabled).map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </FilterButton>
+          <SortButton
+            hidden={{ q, code, brand: brands.join(","), cat: cats.join(","), country }}
+            columns={[
+              { value: "price", label: "Price (EUR)" },
+              { value: "name", label: "Name" },
+              { value: "date", label: "Date" },
+            ]}
+          />
+          <ViewToggle view={view as "table" | "cards"} />
+          <ParamSelect
+            name="ps"
+            value={ps}
+            options={["24", "50", "100", "200", "all"].map((v) => ({ value: v, label: v === "all" ? "All" : v }))}
+          />
+        </Suspense>
+      </div>
 
       {total === 0 ? (
         <div className="empty">
           Nothing found. Try broader words (search also understands German, French, Spanish, Italian and Portuguese
           terms), or kick off a crawl: <code>npm run crawl -- --countries=DE --max=200</code>.
         </div>
+      ) : view === "cards" ? (
+        <div className="grid">
+          {pageRows.map(({ p, best }) => (
+            <ProductCard key={p.erpNumber} product={p} listing={best?.l} />
+          ))}
+        </div>
       ) : (
-        <>
-          <div className="grid">
-            {pageRows.map(({ p, best }) => (
-              <ProductCard key={p.erpNumber} product={p} listing={best} />
-            ))}
-          </div>
-          <div className="pager">
-            {page > 1 ? (
-              <Link className="button ghost" href={qs({ ...extraParams, page: page - 1 })}>
-                ‹ Previous
-              </Link>
-            ) : null}
-            <span style={{ alignSelf: "center", color: "var(--muted)", fontSize: 13 }}>
-              Page {page} / {totalPages}
-            </span>
-            {page < totalPages ? (
-              <Link className="button ghost" href={qs({ ...extraParams, page: page + 1 })}>
-                Next ›
-              </Link>
-            ) : null}
-          </div>
-        </>
+        <div className="table-scroll">
+          <table className="prices pp-table">
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Brand</th>
+                <th>Price (EUR)</th>
+                <th>Local</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map(({ p, best }) => (
+                <tr key={p.erpNumber}>
+                  <td>
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt="" loading="lazy" style={{ width: 44, height: 44, objectFit: "contain" }} />
+                    ) : null}
+                  </td>
+                  <td className="pp-code">
+                    <Link href={`/products/${p.erpNumber}`}>{p.erpNumber}</Link>
+                  </td>
+                  <td className="pp-name">
+                    <Link href={`/products/${p.erpNumber}`}>{p.titleEn || p.title}</Link>
+                  </td>
+                  <td>{p.brandName || p.brandSlug || ""}</td>
+                  <td className="cell-eur">{best ? fmtEur(best.eur) : "—"}</td>
+                  <td className="cell-local">
+                    {best && best.l.currency && best.l.currency !== "EUR" && best.l.currentPrice != null
+                      ? fmtLocal(best.l.currentPrice, best.l.currency)
+                      : ""}
+                  </td>
+                  <td>{new Date(p.lastSeen).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <div className="pager">
+        {page > 1 ? (
+          <Link className="button ghost" href={qs({ ...stateParams(), page: page - 1 })}>
+            ‹ Previous
+          </Link>
+        ) : null}
+        <span style={{ alignSelf: "center", color: "var(--muted)", fontSize: 13 }}>
+          Page {page} / {totalPages}
+        </span>
+        {page < totalPages ? (
+          <Link className="button ghost" href={qs({ ...stateParams(), page: page + 1 })}>
+            Next ›
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }

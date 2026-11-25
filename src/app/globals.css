@@ -472,3 +472,81 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 }
 .chart-toggle button:hover { color: var(--text); border-color: var(--accent); }
 .chart-toggle button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ---- ParkPrice-style listing controls ---- */
+.pp-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 18px;
+}
+.pp-search { display: flex; gap: 6px; flex: 1 1 260px; min-width: 220px; }
+.pp-search input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.pp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none !important;
+  position: relative;
+}
+.pp-btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.pp-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pp-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 999px;
+  min-width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+.pp-btn.active .pp-badge { background: #fff; color: var(--accent); }
+.pp-autosubmit {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.week-toggle { display: flex; gap: 6px; flex-wrap: wrap; }
+.filter-modal { max-width: 560px; max-height: 88vh; overflow: auto; }
+.cat-select { max-height: 160px; overflow: auto; }
+.field select[multiple] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+  padding: 6px;
+}
+.field select[multiple] option { padding: 4px 6px; }
+
+.pp-table td, .pp-table th { vertical-align: middle; }
+.pp-table .pp-code a { font-variant-numeric: tabular-nums; font-size: 13px; }
+.pp-table .pp-name { max-width: 380px; }
+.pp-table .pp-name a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-table img { display: block; }

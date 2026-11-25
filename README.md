@@ -163,13 +163,23 @@ curl -X POST http://localhost:3000/api/crawl \
 | Route | What it shows |
 |---|---|
 | `/` | Overview: tracked counts, brand families, latest deals, new arrivals |
-| `/products` | Multi-word search (EN/DE/FR/ES/IT/PT vocabulary with synonyms) + filters: brand family, country, EUR price range, in-stock, on-sale, sort (newest / name / price) — full pagination |
-| `/products/[erp]` | Product detail: gallery, per-country price table (EUR primary, local secondary), cheapest-country highlight, multi-country price-history chart, tracking popup (ParkPrice-style, editable), manuals & downloads with archived copies |
-| `/deals` | ALL current weekly in-store deals, paginated (not capped), filter by country/brand, sort by newest / biggest discount % / price |
+| `/products` | ParkPrice-style catalog: table view (Image/Code/Name/Brand/Price/Date) with cards toggle, **Filter modal** (code, name, brand multi, category multi, price with `<`/`>` operators, offer yes/no, online yes/no, country), **Sort modal** (column + asc/desc), page size 24/50/100/200/All, full pagination. Multi-word search across EN/DE/FR/ES/IT/PT synonyms |
+| `/products/[erp]` | Product detail: gallery, per-country price table (EUR primary, local secondary), cheapest-country highlight, multi-country price-history chart (EUR/local toggle), tracking popup (ParkPrice-style, editable), manuals & downloads with archived copies |
+| `/deals` | Sales page with **This Week / Next Week / All current** toggle: this week's leaflet sales and price drops; Next Week shows announced offers scanned from next week's leaflets; Filter/Sort modals (price `<`/`>` operators, offer/online tri-state), page size, view toggle |
 | `/new` | Items first seen within the last 7/14/30/90 days |
 | `/archive` | Weekly leaflet (flyer) archive per country: covers, validity dates and stored PDFs |
 | `/alerts` | Passwordless sign-in flow, tracked products, notification feed, email/WhatsApp settings |
 | `/privacy`, `/cookies`, `/terms` | Legal pages: privacy policy, cookie policy, terms of use |
+
+## Catalog UI (ParkPrice-style)
+
+The products and sales pages mirror ParkPrice's UX: a compact control bar
+(search + Filter button with an active-filters badge + Sort button + view
+toggle + page-size selector), filtering and sorting open in modals and are
+fully URL-driven (shareable/bookmarkable queries), tables are the default view
+with a one-click switch to cards, and the price column supports ParkPrice's
+operator syntax (`<100`, `>50`, `20-80`). Week boundaries on the sales page are
+Monday-based.
 
 ## Search & SEO
 

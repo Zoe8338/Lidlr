@@ -103,3 +103,40 @@ export function buildWhereForSearch(q: string | undefined): Prisma.ProductWhereI
     })),
   };
 }
+
+// ParkPrice-style price filter: "<100", ">50", "<=100", ">=50", exact "99", or range "20-80".
+export function parsePriceOp(s: string | string[] | undefined): { min?: number; max?: number } | undefined {
+  const raw = Array.isArray(s) ? s[0] : s;
+  if (!raw) return undefined;
+  const t = raw.replace(/€|\bEUR\b|\s/g, "");
+  const single = t.match(/^(<=|>=|<|>)?(\d+(?:[.,]\d+)?)$/);
+  if (single) {
+    const v = parseFloat(single[2].replace(",", "."));
+    switch (single[1]) {
+      case "<":
+        return { max: v - 0.0001 };
+      case "<=":
+        return { max: v };
+      case ">":
+        return { min: v + 0.0001 };
+      case ">=":
+        return { min: v };
+      default:
+        return { min: v - 0.0001, max: v };
+    }
+  }
+  const range = t.match(/^(\d+(?:[.,]\d+)?)-(\d+(?:[.,]\d+)?)$/);
+  if (range) return { min: parseFloat(range[1].replace(",", ".")), max: parseFloat(range[2].replace(",", ".")) };
+  return undefined;
+}
+
+export function one(sp: Record<string, string | string[] | undefined>, key: string): string | undefined {
+  const v = sp[key];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export function many(sp: Record<string, string | string[] | undefined>, key: string): string[] {
+  const v = sp[key];
+  if (!v) return [];
+  return (Array.isArray(v) ? v : [v]).flatMap((x) => x.split(",")).filter(Boolean);
+}
