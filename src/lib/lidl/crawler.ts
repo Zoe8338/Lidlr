@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { BRANDS, COUNTRIES, slugifyBrand, type CountryConfig } from "./catalog.ts";
+import { BRANDS, COUNTRIES, inFamily, slugifyBrand, type CountryConfig } from "./catalog.ts";
 import { brandItems, type LidlItem } from "./client.ts";
 import { translateTitles, translationEnabled } from "../translate.ts";
 import { getFxRates, type FxRates } from "../fx.ts";
@@ -255,6 +255,7 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
         const lists = await Promise.all(brand.queries.map((q) => brandItems(cc, q, maxItems)));
         for (const list of lists) {
           for (const item of list) {
+            if (!inFamily(brand.family, item.brandName, item.title)) continue;
             const key = `${cc.code}:${item.erpNumber}`;
             if (seen.has(key)) continue;
             seen.add(key);

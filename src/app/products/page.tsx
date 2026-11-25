@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { BRANDS, COUNTRIES, SUB_LINES, matchesSubLine } from "@/lib/lidl/catalog";
 import { ProductCard, type CardListing } from "@/components/ProductCard";
 import { FilterButton, SortButton, ParamSelect, ViewToggle, BrandSubLine } from "@/components/Filters";
+import { PageNumbers } from "@/components/Pager";
 import { buildWhereForSearch, parsePriceOp, one, many } from "@/lib/search";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 import { fmtDate } from "@/lib/format";
@@ -304,6 +305,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
             ‹ Previous
           </Link>
         ) : null}
+        <PageNumbers page={page} totalPages={totalPages} href={(n) => qs({ ...stateParams(), page: n })} />
         <span style={{ alignSelf: "center", color: "var(--muted)", fontSize: 13 }}>
           Page {page} / {totalPages}
         </span>

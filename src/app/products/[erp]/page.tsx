@@ -6,6 +6,7 @@ import { COUNTRIES } from "@/lib/lidl/catalog";
 import { PriceChart } from "@/components/PriceChart";
 import { Gallery } from "@/components/Gallery";
 import { TrackDialog } from "@/components/TrackDialog";
+import { DescriptionBox } from "@/components/DescriptionBox";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 import { emailConfigured } from "@/lib/mail";
 import { fmtDate } from "@/lib/format";
@@ -82,6 +83,12 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
     orderBy: { id: "asc" },
   });
   const fx = await getFxRates();
+  let specs: [string, string][] = [];
+  try {
+    const raw = product.specsEn ?? product.specs;
+    const parsed = raw ? (JSON.parse(raw) as { k: string; v: string }[]) : [];
+    specs = parsed.map((s) => [s.k, s.v]);
+  } catch {}
 
   return (
     <div style={{ padding: "24px 0" }}>
@@ -136,6 +143,35 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
           </div>
         </div>
       </div>
+
+      {(product.descriptionEn || product.description || specs.length) ? (
+        <div className="details-block">
+          <h2 className="section">Description</h2>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+            {product.descriptionEn || product.description ? (
+              <div style={{ flex: 2, minWidth: 260 }}>
+                <DescriptionBox primary={product.descriptionEn || product.description} alt={product.description} />
+              </div>
+            ) : (
+              <p style={{ flex: 2, minWidth: 260, margin: 0, color: "var(--muted)" }}>
+                No description captured yet — it is fetched with the next manual pass.
+              </p>
+            )}
+            {specs.length ? (
+              <table className="prices specs" style={{ flex: 1, minWidth: 220, alignSelf: "flex-start" }}>
+                <tbody>
+                  {specs.map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{k}</td>
+                      <td>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <h2 className="section">Prices by country</h2>
       <div className="table-scroll">

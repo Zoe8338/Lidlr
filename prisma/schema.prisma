@@ -24,6 +24,11 @@ model Product {
   ians          String?
   title         String
   titleEn       String?
+  // product description + spec list, in the source language and translated
+  description   String?
+  descriptionEn String?
+  specs         String?
+  specsEn       String?
   brandName     String?
   brandSlug     String?
   category      String?

@@ -199,7 +199,8 @@ footer.site { margin: 60px 0 30px; color: var(--muted); font-size: 13px; }
 .footer-links a { color: var(--muted); }
 .footer-links a:hover { color: var(--accent); }
 .empty { color: var(--muted); padding: 30px 0; text-align: center; }
-.pager { display: flex; gap: 8px; margin: 20px 0; }
+.pager { display: flex; gap: 8px; margin: 20px 0; align-items: center; justify-content: center; flex-wrap: wrap; }
+.pager .current { background: var(--accent); color: var(--on-accent, #fff); border-color: transparent; cursor: default; }
 
 /* Cookie consent banner */
 .cookie-banner {
@@ -583,3 +584,28 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 .pp-table .pp-name { max-width: 380px; }
 .pp-table .pp-name a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-table img { display: block; }
+
+/* Product description + specs block (ParkPrice-style) */
+.details-block { margin-top: 8px; }
+.descbox-text {
+  margin: 0; line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+  overflow: hidden; position: relative;
+}
+.descbox-text.open { -webkit-line-clamp: unset; display: block; }
+.descbox {
+  position: relative;
+  background: var(--surface2);
+  border-radius: 16px; padding: 14px 16px 8px;
+}
+.descbox:not(:has(.open))::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 34px; height: 40px;
+  background: linear-gradient(transparent, var(--surface2)); pointer-events: none;
+  border-radius: 0 0 0 16px;
+}
+.descbox-alt { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+.descbox-more {
+  display: block; margin: 4px 0 8px; padding: 4px 10px;
+  color: var(--accent); font-weight: 600; font-size: 13px;
+}
+table.prices.specs td { padding: 6px 10px; font-size: 13.5px; border-bottom: 1px solid var(--border); }

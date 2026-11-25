@@ -21,8 +21,11 @@ if (args.notify) {
   const delivery = await deliverPendingNotifications();
   console.log("NOTIFICATIONS", { created: notifications, ...delivery });
 }
-if (args.manuals) {
-  const manuals = await fetchManuals({ countries, maxPerRun: args.max ? Number(args.max) : undefined });
+if (!args["no-manuals"]) {
+  const manuals = await fetchManuals({
+    countries,
+    maxPerRun: typeof args.manuals === "string" ? Number(args.manuals) : 150,
+  });
   console.log("MANUAL SUMMARY", JSON.stringify(manuals));
 }
 if (args.leaflets) {

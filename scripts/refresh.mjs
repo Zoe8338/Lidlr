@@ -14,8 +14,6 @@ const crawlOnly = args.includes("--no-parkprice");
 const crawlArgs = args.filter((a) => !a.startsWith("--pp-"));
 const ppArgs = args.filter((a) => a.startsWith("--pp-")).map((a) => `--${a.slice(5)}`);
 
-console.error("DEBUG args=" + JSON.stringify(args));
-console.error("DEBUG ppArgs=" + JSON.stringify(ppArgs));
 const here = fileURLToPath(new URL("../", import.meta.url));
 
 console.log("[refresh] 1/2 crawl\n");

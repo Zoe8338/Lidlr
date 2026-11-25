@@ -11,9 +11,12 @@
     "crawl": "node scripts/crawl.mjs",
     "parkprice": "node scripts/parkprice.mjs",
     "translate": "node scripts/translate.mjs",
+    "prune": "node scripts/prune.mjs",
+    "repair": "node scripts/repair.mjs",
     "refresh": "node scripts/refresh.mjs",
     "leaflets": "node scripts/leaflets.mjs",
-    "manuals": "node scripts/manuals.mjs"
+    "manuals": "node scripts/manuals.mjs",
+    "icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",

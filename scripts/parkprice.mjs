@@ -85,7 +85,14 @@ function parseProduct(html) {
       ?.replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&").replace(/&gt;/g, ">").replace(/&lt;/g, "<") ?? null;
   const img =
     html.match(/<meta property="og:image" content="([^"]+)"/)?.[1] ?? null;
-  return { ian, title, img };
+  const manuals = [...new Set(
+    [...html.matchAll(/<a\b[^>]*>/gi)]
+      .map((m) => m[0])
+      .filter((tag) => /id=["']btnOpenPDF["']/.test(tag))
+      .map((tag) => tag.match(/href=["']([^"']+\.pdf[^"']*)["']/i)?.[1])
+      .filter(Boolean)
+  )];
+  return { ian, title, img, manuals };
 }
 
 async function main() {
@@ -102,7 +109,8 @@ async function main() {
   if (Number.isFinite(MAX)) urls = urls.slice(0, MAX);
   console.log(`processing ${urls.length} pages (offset ${OFFSET}, delay ${DELAY} ms)\n`);
 
-  let fetched = 0, cached = 0, updated = 0, matched = 0, notInCatalog = 0, failed = 0;
+  let fetched = 0, cached = 0, updated = 0, matched = 0, notInCatalog = 0, failed = 0, manualsAdded = 0;
+  let manualsSeen = 0;
 
   for (const url of urls) {
     const key = url.replace(/^https?:\/\/www\.park-price\.com\/en\/product\//, "").split("/")[0];
@@ -112,7 +120,7 @@ async function main() {
     const html = await fetchText(url);
     if (!html) { failed++; continue; }
     fetched++;
-    const { ian, title, img } = parseProduct(html);
+    const { ian, title, img, manuals } = parseProduct(html);
 
     const erp = ian ? byIan.get(ian) : null;
     if (PROBE) {
@@ -139,8 +147,18 @@ async function main() {
       await prisma.product.update({ where: { erpNumber: erp }, data: changes });
       updated++;
     }
+    for (const url of manuals) {
+      manualsSeen++;
+      if (DRY) continue;
+      const r = await prisma.manual.upsert({
+        where: { erpNumber_url: { erpNumber: erp, url } },
+        update: {},
+        create: { erpNumber: erp, url, title: "Instruction manual", language: null },
+      });
+      if (r) manualsAdded++;
+    }
     matched++;
-    state[key] = { ian, title, erp, updated: Object.keys(changes).length, at: new Date().toISOString() };
+    state[key] = { ian, title, erp, manuals, updated: Object.keys(changes).length, at: new Date().toISOString() };
     if (fetched % 10 === 0) saveState();
   }
   saveState();
@@ -150,6 +168,7 @@ async function main() {
   } else {
     console.log(`\nDone. fetched=${fetched} cached=${cached} matched=${matched} notInCatalog=${notInCatalog} httpFailed=${failed}`);
     console.log(`products updated: ${DRY ? "(dry-run — nothing written)" : updated}`);
+    console.log(`manuals: seen=${manualsSeen} added=${DRY ? "(dry-run)" : manualsAdded}${PROBE ? "" : " (also link on each product page as \"Official\"; archived copies come from Lidlr's own manual fetcher)"}`);
   }
   await prisma.$disconnect();
 }

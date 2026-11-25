@@ -17,7 +17,9 @@ politeness delay in place, and don't hammer the shops.
 - Prisma + SQLite (single-file DB, swap to Postgres by changing `prisma/schema.prisma` datasource)
 - Crawler uses Lidl's public storefront search API (`/q/api/search`) with a per-country assortment/locale —
   no private APIs, no scraping of disallowed paths (robots.txt is respected; search HTML pages are never hit)
-- Built-in scheduler (in-process): weekly full crawl + daily notification evaluation & delivery, no cron dependency
+- Built-in scheduler (in-process): **daily crawl per country at that shop's local 02:00**
+  (staggered, no cron dependency), plus a full pass and leaflet fetch at container start;
+  notification evaluation + delivery after every crawl, leaflet offers once a day
 
 ## Currency comparison
 
@@ -29,9 +31,10 @@ table show the EUR equivalent first, with the local shop currency underneath
 sorting, min/max filters and the deals "biggest discount %" sort all operate
 on the EUR value, so PLN and EUR listings are compared fairly. The price-
 history chart follows the same scheme with an **EUR / Local toggle**: EUR mode
-plots every country on one shared axis (converted at the current ECB rate,
-marked "conv." in the legend); Local mode shows each line in its own currency
-— the raw snapshot values, one chart per currency when they differ.
+plots every country on one shared axis using the **rate stored on each
+snapshot** (the crawler records the ECB reference rate at crawl time, so old
+points convert at their original rate); Local mode shows each line in its own
+currency — the raw snapshot values, one chart per currency when they differ.
 
 ## Product images
 
@@ -46,8 +49,9 @@ docker compose up -d --build
 ```
 
 That's it: builds the image, syncs the SQLite schema, starts the app on
-http://localhost:3000 with the weekly crawl + daily notification scheduler running, and
-keeps the database in the `lidlr-data` volume (survives rebuilds and restarts).
+http://localhost:3000 with the built-in scheduler running (boot crawl pass,
+then daily 02:00-local crawls per country), and keeps the database in the
+`lidlr-data` volume (survives rebuilds and restarts).
 
 Seed some data from the container:
 
@@ -65,10 +69,71 @@ Pulls the newest commit from this repo, rebuilds the image, restarts the
 container and prunes the old image. The database and session secret live in the
 `lidlr-data` volume, so nothing is lost on update.
 
+## Command reference
+
+All maintenance commands run inside the container (prefix with
+`docker compose exec lidlr`) unless noted. `.env` flags: `AUTO_TRANSLATE=1`
+(default on in docker-compose) enables translations, `SCHEDULER_DISABLED=1`
+stops the built-in scheduler.
+
+| Command | What it does |
+| --- | --- |
+| `npm run crawl -- --countries=DE,FR,PT --max=100` | Crawl named countries (all `≤ max` items per brand), upsert products/prices. Add `--brands=crivit,parkside` to narrow, `--notify` to also evaluate + send notifications, `--leaflets` / `--manuals=<n>` to include those passes, `--no-manuals` to skip the automatic manual+description pass. |
+| `npm run refresh -- --countries=DE,AT,FR,IT,ES,NL,BE,PL,PT --max=100` | **One command: crawl + ParkPrice import.** Flags go to the crawl; `--pp-\*` flags go to the import (`--pp-max=500`, `--pp-delay=5000`, `--pp-offset`, `--pp-refetch`, `--pp-dry-run`); `--no-parkprice` for crawl only. |
+| `npm run parkprice -- --max=500` | Import ParkPrice product metadata only (English titles, IAN match, images **and manual PDF links**) for products we also track. Polite: single-threaded, 3 s between requests, resumable via `data/parkprice-progress.json`; `--probe=20` samples without writes, `--dry-run` parses without writing. |
+| `npm run repair` | **Check every product and fix what's missing:** reports foreign rows, then backfills missing English titles, missing descriptions/specs and missing manuals in one pass. `-- --limit=500` caps per-phase count; repeat runs (or a cron) drain the rest — everything is idempotent. |
+| `npm run translate -- --limit=200` | Backfill English titles only (`-- --dry-run` previews). Also used by `refresh`/`repair`. |
+| `npm run prune` | List products whose brand/title is not a tracked Lidl own-brand (sponsored search results that slipped in before brand filtering). `-- --apply` deletes them **and** their listings/snapshots/trackings/manuals. Dry run by default. |
+| `npm run manuals -- --countries=DE --max=50` | Manual + description pass only: visits product pages, archives manual PDFs (sha256-deduped) and captures description/specs. |
+| `npm run leaflets -- --countries=PT,DE` | Fetch current leaflets (add `--nopdf` for metadata-only). |
+| `npm run icons` | Regenerate the PWA icons (`public/icon-*.png`). |
+| `npm run db:push` | Sync `prisma/schema.prisma` to the database (the Docker entrypoint already does this at start). |
+| `npm run dev` / `build` / `start` | Develop / production build / serve (all standard Next.js). |
+
+Quick database stats from the host:
+
+```bash
+docker compose exec lidlr node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();(async()=>{console.log('products:',await p.product.count());console.log('listings:',await p.listing.count());console.log('snapshots:',await p.snapshot.count());console.log('manuals:',await p.manual.count());process.exit(0)})()"
+```
+
+## Automated crawl schedule
+
+The in-app scheduler (disable with `SCHEDULER_DISABLED=1`) runs inside the web
+process — no external cron needed:
+
+- **Boot pass** — ~60 s after the container starts: full crawl of every enabled
+  country × brand, then tracking evaluation → notification delivery → leaflet
+  fetch → leaflet-offer evaluation → delivery → manuals + descriptions pass.
+- **Every 10 minutes** it checks each enabled country's **local time**; when a
+  shop reaches 02:00 local (`CRAWL_HOUR`, default 2) and that country hasn't
+  been crawled in the last 22 h, that country is crawled on its own, then
+  tracking evaluation + notification delivery + a capped manuals pass run.
+  So every country gets a fresh **daily** crawl at 02:00 *its* time (Lidl drops
+  land mid-week and on Fridays), and the load is spread thinly over the night.
+- **Leaflets** are re-fetched once per 24 h; leaflet offers are re-evaluated
+  right after, so in-leaflet notifications stay current for Monday/Friday drops.
+
+Stagger detail: at most 4 countries are crawled per 10-minute tick, so even a
+fully-synchronized clock edge crawls at most 4 shops at once.
+
+## Product details (description & specs)
+
+The manual pass also parses each visited Lidl product page for its marketing
+description and short highlight/spec lines (e.g. "Gewicht: 2 kg"):
+
+- `Product.description` keeps the original text, `Product.descriptionEn` and
+  `Product.specsEn` the **English translations**, `Product.specs` the original
+  spec pairs (JSON).
+- Product pages show a ParkPrice-style **description block** next to a spec
+  table; long descriptions are clamped with a **Read more / Show less** toggle
+  and the original-language text underneath in smaller print.
+- Backfill: any product without a description is fetched on the next manuals
+  pass (`npm run repair` walks all of them).
+
 ## Passwordless accounts & tracking
 
 - Users sign in at `/login` with just their **email**: they receive a one-time
-  6-digit code (valid 15 minutes, delivered via Resend). **No credentials are
+  6-digit code (valid 15 minutes, delivered via your own SMTP or Resend). **No credentials are
   stored server-side** — login codes are kept only as an HMAC hash and are
   deleted after use, and sessions are HMAC-signed httpOnly cookies (30 days).
 - Signed-in users **track products** from any product page with one click.
@@ -119,10 +184,13 @@ Failures degrade silently — the original name is kept and retried next run.
 
 `npm run parkprice` walks park-price.com's sitemaps (politely: single-threaded,
 3 s between requests, resumable) and imports **product metadata only** — English
-titles, IAN article numbers, images — for products we also track. Lidl IANs map
-ParkPrice pages to our ERP numbers, so an exact match is only recorded when the
-IAN is known (crawls fill `Product.ians`); everything else is skipped.
-Price/sales history is not imported (anonymous ParkPrice data is geo-scoped).
+titles, IAN article numbers, images. Any PDF manuals linked on a matched
+ParkPrice page (`btnOpenPDF` anchors) are imported as manual records — they link
+to Lidl's own media host (Official link only; archived copies are made by our
+own fetcher). Lidl IANs map ParkPrice pages to our ERP numbers, so an exact
+match is only recorded when the IAN is known (crawls fill `Product.ians`);
+everything else is skipped. Price/sales history is not imported (anonymous
+ParkPrice data is geo-scoped).
 
 ```bash
 # crawl + ParkPrice import in one command (flags go to the crawl,
@@ -145,7 +213,8 @@ docker compose exec lidlr node -e "const{PrismaClient}=require('@prisma/client')
 ```
 
 Progress is stored in `data/parkprice-progress.json`, so an interrupted run
-resumes where it stopped. Re-run after new crawls to pick up newly matched IANs.
+resumes where it stopped. Re-run after new crawls to pick up newly matched IANs
+(and their manuals).
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
 shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `RESEND_API_KEY`, `SITE_URL`,
@@ -198,7 +267,7 @@ curl -X POST http://localhost:3000/api/crawl \
 | Route | What it shows |
 |---|---|
 | `/` | Overview: tracked counts, brand families, latest deals, new arrivals |
-| `/products` | ParkPrice-style catalog: table view (Image/Code/Name/Brand/Price/Date) with cards toggle, **Filter modal** (code, name, brand multi, category multi, price with `<`/`>` operators, offer yes/no, online yes/no, country), **Sort modal** (column + asc/desc), page size 24/50/100/200/All, full pagination. Multi-word search across EN/DE/FR/ES/IT/PT synonyms |
+| `/products` | ParkPrice-style catalog: **cards grid by default** (table view via the view toggle), **Filter modal** (code, name, brand, sub-line — adapted to the brand and greyed out when not applicable — price with `<`/`>` operators, offer yes/no, online yes/no, country), **Sort modal** (column + asc/desc), page size 24/50/100/200/All, numbered pagination (10 page numbers, ±5 around current). Multi-word search across EN/DE/FR/ES/IT/PT synonyms |
 | `/products/[erp]` | Product detail: gallery, per-country price table (EUR primary, local secondary), cheapest-country highlight, multi-country price-history chart (EUR/local toggle), tracking popup (ParkPrice-style, editable), manuals & downloads with archived copies |
 | `/deals` | Sales page with **This Week / Next Week / All current** toggle: this week's leaflet sales and price drops; Next Week shows announced offers scanned from next week's leaflets; Filter/Sort modals (price `<`/`>` operators, offer/online tri-state), page size, view toggle |
 | `/new` | Items first seen within the last 7/14/30/90 days |
@@ -211,10 +280,21 @@ curl -X POST http://localhost:3000/api/crawl \
 The products and sales pages mirror ParkPrice's UX: a compact control bar
 (search + Filter button with an active-filters badge + Sort button + view
 toggle + page-size selector), filtering and sorting open in modals and are
-fully URL-driven (shareable/bookmarkable queries), tables are the default view
-with a one-click switch to cards, and the price column supports ParkPrice's
-operator syntax (`<100`, `>50`, `20-80`). Week boundaries on the sales page are
-Monday-based.
+fully URL-driven (shareable/bookmarkable queries). **Cards grid is the default
+view** with a one-click switch to the table. The price column supports
+ParkPrice's operator syntax (`<100`, `>50`, `20-80`), the country is a
+standalone filter, and Brand → Sub-line is one combined adaptive filter
+(e.g. Parkside → Performance; Livarno → Home — greyed out when the selected
+brand has no sub-lines). Pagination is numbered: up to 10 page buttons with
+±5 pages around the current one, on top of Previous/Next. Week boundaries on
+the sales page are Monday-based.
+
+Only the requested own-brand families are crawled and kept: Parkside (incl.
+Performance), Esmara (incl. Men), Crivit (incl. sub-lines), Livery/Livergy,
+Cien (incl. Cien Men), Silvercrest (incl. Personal Care & Kitchen Tools),
+Dentalux and all Livarno lines — sponsored results that Lidl's search API
+injects for other brands are dropped at crawl time (`inFamily` filter), and
+`npm run prune` removes anything foreign from the database.
 
 ## Search & SEO
 
@@ -230,11 +310,17 @@ For external SEO: `robots.txt` and a dynamic `sitemap.xml` (all product pages)
 are generated, every product page emits per-product `<title>`/description/Open
 Graph metadata, and `SITE_URL` sets the canonical base URL.
 
-## Mobile
+## Mobile & PWA
 
 The stylesheet is mobile-first at ≤720px: 2-column product grid, horizontally
 scrollable nav and tables, full-width filter fields, compact hero/stats, and
 scroll-safe modals. No layout is desktop-only.
+
+Lidlr is also **installable as a web app (PWA)**: it serves a web manifest
+(`/manifest.webmanifest`) and generated app icons (192/512 px + maskable and
+Apple touch icon). Visit the site in a mobile browser and use *Add to Home
+Screen* (iOS Safari) or the install prompt (Chrome/Android) to get a
+standalone, app-icon launch of Lidlr.
 
 ## Tracking & notifications
 
@@ -305,16 +391,22 @@ caps), so you know your item is in this week's paper before you walk in.
 Many products (mostly tools: Parkside, Silvercrest, …) have official manuals on their Lidl product
 page ("Anleitungen & Downloads", served from `manuals.sit-connect.com`). Lidlr archives them:
 
-- A background pass (after the weekly crawl, or `npm run manuals -- --countries=DE --max=50`,
-  or `--manuals` on the crawl script / `{"manuals":true}` on `POST /api/crawl`) visits each
-  unchecked product's page, extracts every PDF download with its language, and stores a
-  **sha256-deduped copy in `data/manuals/`** (max `MANUAL_MAX_PER_PRODUCT` per product,
-  `MANUAL_MAX_PDF_MB` cap). `MANUAL_FETCH_PER_RUN` products are checked per run so regular
-  crawls stay fast; everything drains over a few runs.
+- The pass **runs automatically after every crawl** (i.e. daily, right after the 02:00-local
+  per-country crawls), visiting unchecked products' pages, extracting every PDF download with
+  its language, and storing a **sha256-deduped copy in `data/manuals/`** (max
+  `MANUAL_MAX_PER_PRODUCT` per product, `MANUAL_MAX_PDF_MB` cap). `MANUAL_FETCH_PER_RUN`
+  (default 150) products are checked per run; everything drains over a few runs. Skip it with
+  `--no-manuals`, resize with `--manuals=<n>`, or run standalone with
+  `npm run manuals -- --countries=DE --max=50`.
+- The same product-page fetch also captures the **description and specs** (see
+  [Product details](#product-details-description--specs)) — one network visit serves both.
+- Manuals imported from ParkPrice appear as **Official ↗** links too (no archived copy —
+  archive copies are made by our own fetcher, which downloads from Lidl directly).
 - The product page lists every manual with the **Official ↗** link plus an **Archived copy**
   link (`/api/manuals/<id>`) served from your volume — the PDF stays available even if Lidl
   or SIT takes the original down.
-- Products with no manuals are remembered (`manualCheckedAt`) and never re-fetched.
+- Products with no manuals are remembered (`manualCheckedAt`) and never re-fetched (unless
+  their description is still missing).
 
 ## Crawler mechanics (`src/lib/lidl/`)
 
@@ -327,5 +419,5 @@ page ("Anleitungen & Downloads", served from `manuals.sit-connect.com`). Lidlr a
   country listings, write a `Snapshot` per listing per crawl, count new items and price changes, and record a
   `CrawlRun`.
 
-The weekly cadence is the default (`WEEKLY_MS`); change it in `src/lib/scheduler.ts` or disable with
-`SCHEDULER_DISABLED=1` and drive crawls yourself via `/api/crawl` from external cron.
+The scheduler (see [Automated crawl schedule](#automated-crawl-schedule)) runs everything in-process;
+disable it with `SCHEDULER_DISABLED=1` and drive crawls yourself via `/api/crawl` from external cron.

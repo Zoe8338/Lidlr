@@ -25,14 +25,22 @@ export const metadata: Metadata = {
     "lidl eu price comparison",
   ],
   openGraph: { siteName: "Lidlr", type: "website" },
+  appleWebApp: { capable: true, title: "Lidlr", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icon-180.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0f14" },
+    { media: "(prefers-color-scheme: light)", color: "#f0f4f9" },
+    { media: "(prefers-color-scheme: dark)", color: "#101318" },
   ],
 };
 

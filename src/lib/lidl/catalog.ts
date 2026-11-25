@@ -92,6 +92,17 @@ export const SUB_LINES: Record<string, string[]> = {
   cien: ["Cien", "Cien Men"],
 };
 
+// Sponsored results inside the Lidl search API bring unrelated products
+// (e.g. food brands in a Cien query) — a crawled item belongs to a tracked
+// own-brand only when its brand name or title actually mentions the family.
+export function inFamily(family: string, brandName?: string | null, title?: string | null): boolean {
+  const fam = (family || "").split("-")[0].toUpperCase();
+  if (!fam) return true;
+  const variants = fam === "LIVERY" ? ["LIVERY", "LIVERGY"] : [fam];
+  const hay = `${brandName ?? ""} ${title ?? ""}`.toUpperCase();
+  return variants.some((v) => hay.includes(v));
+}
+
 const SUB_LINE_PATTERNS: Record<string, RegExp> = {
   "Parkside Performance": /PARKSIDE[®\s-]*PERFORMANCE/,
   "Esmara Men": /ESMARA[®\s-]*MEN/,

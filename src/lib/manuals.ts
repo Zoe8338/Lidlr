@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "./db.ts";
+import { parseDetails } from "./lidl/details.ts";
+import { translateText, translateTitles, translationEnabled } from "./translate.ts";
 
 const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36";
 const DELAY_MS = Number(process.env.CRAWL_DELAY_MS || 400);
@@ -11,6 +13,35 @@ const MAX_PER_RUN = Number(process.env.MANUAL_FETCH_PER_RUN || 25);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ParsedManual = { url: string; title: string; language: string | null };
+
+// Extract description + specs from an already-fetched product page, translate
+// them to English and store them on the product (ParkPrice-style detail block).
+export async function describeProduct(erpNumber: string, html: string): Promise<void> {
+  const { description, specs } = parseDetails(html);
+  if (!description && !specs?.length) return;
+  const data: Record<string, unknown> = {};
+  if (description) data.description = description;
+  if (specs?.length) {
+    data.specs = JSON.stringify(specs);
+    if (translationEnabled()) {
+      const map = await translateTitles(specs.flatMap((s) => [s.k, s.v]));
+      const translated = specs.map((s) => ({
+        k: map.get(s.k) ?? s.k,
+        v: map.get(s.v) ?? s.v,
+      }));
+      if (translated.length) data.specsEn = JSON.stringify(translated);
+    }
+  }
+  if (description && translationEnabled()) {
+    const en = await translateText(description);
+    if (en && en !== description) data.descriptionEn = en.slice(0, 1500);
+  }
+  try {
+    await prisma.product.update({ where: { erpNumber }, data });
+  } catch {
+    // product may have been deleted mid-run — ignore
+  }
+}
 
 function decodeEntities(s: string): string {
   return s
@@ -121,12 +152,13 @@ export async function fetchManuals(
 
   const candidates = await prisma.product.findMany({
     where: {
-      manualCheckedAt: null,
+      OR: [{ manualCheckedAt: null }, { description: null }],
       listings: wanted?.length ? { some: { url: { not: null }, countryCode: { in: wanted } } } : { some: { url: { not: null } } },
     },
     orderBy: { firstSeen: "desc" },
     select: {
       erpNumber: true,
+      description: true,
       listings: { select: { url: true, countryCode: true } },
       trackings: { select: { id: true } },
     },
@@ -144,13 +176,17 @@ export async function fetchManuals(
     if (checked >= perRun) break;
     checked++;
     let found: ParsedManual[] = [];
+    let pageHtml: string | null = null;
     const urls = preferredUrls(product.listings);
     for (const u of urls) {
       const html = await fetchText(u);
+      if (html && !pageHtml) pageHtml = html;
       if (html) found = parseManuals(html);
       await sleep(DELAY_MS);
       if (found.length) break;
     }
+    if (pageHtml && !product.description) 
+      await describeProduct(product.erpNumber, pageHtml);
     if (!found.length) {
       await prisma.product.update({ where: { erpNumber: product.erpNumber }, data: { manualCheckedAt: new Date() } });
       continue;
