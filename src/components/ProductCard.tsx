@@ -7,6 +7,8 @@ export type CardProduct = {
   titleEn?: string | null;
   imageUrl?: string | null;
   brandName?: string | null;
+  // archived/app-proxied image URLs take precedence over imageUrl
+  imageSrcs?: string[];
 };
 
 export type CardListing = {
@@ -28,9 +30,10 @@ export async function ProductCard({ product, listing }: { product: CardProduct; 
   const eurWas =
     listing?.oldPrice != null && fx && listing?.currency ? convert(listing.oldPrice, listing.currency, "EUR", fx) : null;
 
+  const img = product.imageSrcs?.[0] ?? product.imageUrl ?? null;
   return (
     <Link href={`/products/${product.erpNumber}`} className="card">
-      {product.imageUrl ? <img src={product.imageUrl} alt={product.titleEn ?? product.title} loading="lazy" /> : null}
+      {img ? <img src={img} alt={product.titleEn ?? product.title} loading="lazy" /> : null}
       <div className="title">
         {product.titleEn && product.titleEn !== product.title ? (
           <span className="title-en">{product.titleEn}</span>

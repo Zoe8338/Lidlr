@@ -16,6 +16,7 @@
     "refresh": "node scripts/refresh.mjs",
     "leaflets": "node scripts/leaflets.mjs",
     "manuals": "node scripts/manuals.mjs",
+    "images": "node scripts/images.mjs",
     "icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {

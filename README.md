@@ -42,6 +42,15 @@ The crawler stores up to 4 images per product from Lidl's `imageList`; the
 product page shows a click-to-swap gallery and cards show the main image.
 Images of products already in the DB are backfilled on their next crawl.
 
+Images are also **archived inside the app**: every product image is copied
+(sha256-deduped by URL) into `data/images/` and served from your own server
+(`/api/images/...`), so product cards, galleries and deals keep working even
+after Lidl deletes or renames the original. Until a product's images are
+archived, pages serve them through `/api/img?u=...`, which lazily stores the
+image on first view and falls back to the original URL. The archive pass runs
+after every crawl (400 products per run by default, `IMAGE_FETCH_PER_RUN`),
+manually with `npm run images`, and as part of `npm run repair`.
+
 ## One-command on-prem deploy (Docker)
 
 ```bash
@@ -81,10 +90,11 @@ stops the built-in scheduler.
 | `npm run crawl -- --countries=DE,FR,PT --max=100` | Crawl named countries (all `≤ max` items per brand), upsert products/prices. Add `--brands=crivit,parkside` to narrow, `--notify` to also evaluate + send notifications, `--leaflets` / `--manuals=<n>` to include those passes, `--no-manuals` to skip the automatic manual+description pass. |
 | `npm run refresh -- --countries=DE,AT,FR,IT,ES,NL,BE,PL,PT --max=100` | **One command: crawl + ParkPrice import.** Flags go to the crawl; `--pp-\*` flags go to the import (`--pp-max=500`, `--pp-delay=5000`, `--pp-offset`, `--pp-refetch`, `--pp-dry-run`); `--no-parkprice` for crawl only. |
 | `npm run parkprice -- --max=500` | Import ParkPrice product metadata only (English titles, IAN match, images **and manual PDF links**) for products we also track. Polite: single-threaded, 3 s between requests, resumable via `data/parkprice-progress.json`; `--probe=20` samples without writes, `--dry-run` parses without writing. |
-| `npm run repair` | **Check every product and fix what's missing:** reports foreign rows, then backfills missing English titles, missing descriptions/specs and missing manuals in one pass. `-- --limit=500` caps per-phase count, `-- --prune` additionally **deletes** the foreign products (dry report by default); repeat runs (or a cron) drain the rest — everything is idempotent. Translation replies to rate limits with growing backoff (10 s → 120 s), so a 429 just slows the run, it doesn't end it. |
+| `npm run repair` | **Check every product and fix what's missing:** reports foreign rows, then backfills missing English titles, missing descriptions/specs, missing manuals and missing image archives in one pass. `-- --limit=500` caps per-phase count, `-- --prune` additionally **deletes** the foreign products (dry report by default); repeat runs (or a cron) drain the rest — everything is idempotent. Translation replies to rate limits with growing backoff (10 s → 120 s), so a 429 just slows the run, it doesn't end it. |
 | `npm run translate -- --limit=200` | Backfill English titles only (`-- --dry-run` previews). Also used by `refresh`/`repair`. |
 | `npm run prune` | List products whose brand/title is not a tracked Lidl own-brand (sponsored search results that slipped in before brand filtering). `-- --apply` deletes them **and** their listings/snapshots/trackings/manuals. Dry run by default. |
 | `npm run manuals -- --countries=DE --max=50` | Manual + description pass only: visits product pages, archives manual PDFs (sha256-deduped) and captures description/specs. |
+| `npm run images -- --max=400` | Image-archive pass only: copies product images into `data/images/` (sha256-deduped) and switches the app to serve them from `/api/images/...`. Runs automatically after crawls; `-- --max` caps products per run. |
 | `npm run leaflets -- --countries=PT,DE` | Fetch current leaflets (add `--nopdf` for metadata-only). |
 | `npm run icons` | Regenerate the PWA icons (`public/icon-*.png`). |
 | `npm run db:push` | Sync `prisma/schema.prisma` to the database (the Docker entrypoint already does this at start). |

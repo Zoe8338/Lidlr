@@ -4,6 +4,7 @@ import { COUNTRIES } from "./lidl/catalog.ts";
 import { deliverPendingNotifications } from "./notify.ts";
 import { fetchLeaflets, evaluateLeafletOffers } from "./leaflets.ts";
 import { fetchManuals } from "./manuals.ts";
+import { fetchImages } from "./images.ts";
 
 const TICK_MS = 10 * 60 * 1000;
 const CRAWL_HOUR = Number(process.env.CRAWL_HOUR || 2); // local time of each shop
@@ -80,6 +81,7 @@ async function tick() {
       await safe("track-eval", () => evaluateTrackings());
       await safe("notif-delivery", () => deliverPendingNotifications());
       await safe("manuals+descriptions", () => fetchManuals({ maxPerRun: 150 }));
+      await safe("image-archive", () => fetchImages({ maxPerRun: 400 }));
     }
     if (offersDirty) {
       await safe("leaflet-offers", () => evaluateLeafletOffers());
@@ -97,6 +99,7 @@ async function tick() {
       await safe("leaflet-offers", () => evaluateLeafletOffers());
       await safe("notif-delivery-2", () => deliverPendingNotifications());
       await safe("manuals+descriptions", () => fetchManuals({ maxPerRun: 150 }));
+      await safe("image-archive", () => fetchImages({ maxPerRun: 400 }));
       lastLeaflets = Date.now();
       for (const c of COUNTRIES.filter((c) => c.enabled)) lastLeafletFetch.set(c.code, Date.now());
     }

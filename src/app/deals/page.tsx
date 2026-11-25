@@ -8,6 +8,7 @@ import { PageNumbers } from "@/components/Pager";
 import { parsePriceOp, one, many } from "@/lib/search";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 import { fmtDate } from "@/lib/format";
+import { productImageSrcs } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
     date: Date;
     valid?: string | null;
     key?: string;
+    imageSrcs?: string[];
   };
 
   let deals: Deal[] = [];
@@ -87,6 +89,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
           title: o.title,
           brand: o.brand || "",
           imageUrl: o.imageUrl,
+          imageSrcs: o.imageUrl ? [`/api/img?u=${encodeURIComponent(o.imageUrl)}`] : undefined,
           url: o.url ?? (lf.viewUrl ?? null),
           countryCode: lf.countryCode,
           price: eur,
@@ -127,6 +130,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
           title: l.product.titleEn || l.product.title,
           brand: l.product.brandName || l.product.brandSlug || "",
           imageUrl: l.product.imageUrl,
+          imageSrcs: productImageSrcs(l.product),
           url: l.url,
           countryCode: l.countryCode,
           price: eur,
@@ -296,7 +300,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
             <div key={`${d.countryCode}-${d.erpNumber}`}>
               {d.discount ? <span className="discount-badge">-{d.discount}%</span> : null}
               <ProductCard
-                product={{ erpNumber: d.erpNumber!, title: d.title, imageUrl: d.imageUrl, brandName: d.brand }}
+                product={{ erpNumber: d.erpNumber!, title: d.title, imageUrl: d.imageUrl, brandName: d.brand, imageSrcs: d.imageSrcs }}
                 listing={{
                   countryCode: d.countryCode,
                   currentPrice: d.price,
@@ -330,7 +334,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
               {pageRows.map((d) => (
                 <tr key={d.key ?? `${d.countryCode}-${d.erpNumber}`}>
                   <td>
-                    {d.imageUrl ? <img src={d.imageUrl} alt="" loading="lazy" style={{ width: 44, height: 44, objectFit: "contain" }} /> : null}
+                    {d.imageUrl ? <img src={d.imageSrcs?.[0] ?? d.imageUrl} alt="" loading="lazy" style={{ width: 44, height: 44, objectFit: "contain" }} /> : null}
                   </td>
                   {week === "next" ? null : (
                     <td className="pp-code">

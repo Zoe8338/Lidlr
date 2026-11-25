@@ -8,6 +8,7 @@ import { PageNumbers } from "@/components/Pager";
 import { buildWhereForSearch, parsePriceOp, one, many } from "@/lib/search";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 import { fmtDate } from "@/lib/format";
+import { productImageSrcs } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
@@ -253,7 +254,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
       ) : view === "cards" ? (
         <div className="grid">
           {pageRows.map(({ p, best }) => (
-            <ProductCard key={p.erpNumber} product={p} listing={best?.l} />
+            <ProductCard key={p.erpNumber} product={{ ...p, imageSrcs: productImageSrcs(p) }} listing={best?.l} />
           ))}
         </div>
       ) : (
@@ -275,7 +276,7 @@ export default async function Products({ searchParams }: { searchParams: Promise
                 <tr key={p.erpNumber}>
                   <td>
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt="" loading="lazy" style={{ width: 44, height: 44, objectFit: "contain" }} />
+                      <img src={productImageSrcs(p)[0]} alt="" loading="lazy" style={{ width: 44, height: 44, objectFit: "contain" }} />
                     ) : null}
                   </td>
                   <td className="pp-code">

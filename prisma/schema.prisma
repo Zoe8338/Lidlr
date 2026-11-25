@@ -34,6 +34,8 @@ model Product {
   category      String?
   imageUrl      String?
   images        String?
+  // filenames (data/images/<sha256>.<ext>) of archived copies of imageUrl+images
+  storedImages  String?
   firstSeen     DateTime       @default(now())
   lastSeen      DateTime       @default(now())
   removed       Boolean        @default(false)

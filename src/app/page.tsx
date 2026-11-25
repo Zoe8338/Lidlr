@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { BRANDS, COUNTRIES } from "@/lib/lidl/catalog";
 import { ProductCard } from "@/components/ProductCard";
 import { fmtDate, fmtDateTime } from "@/lib/format";
+import { productImageSrcs } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ export default async function Home() {
       ) : (
         <div className="grid">
           {deals.map((l) => (
-            <ProductCard key={l.id} product={l.product} listing={l} />
+            <ProductCard key={l.id} product={{ ...l.product, imageSrcs: productImageSrcs(l.product) }} listing={l} />
           ))}
         </div>
       )}
@@ -85,7 +86,7 @@ export default async function Home() {
         <div className="grid">
           {fresh.map((p) => {
             const l = p.listings.find((x) => x.currentPrice != null) ?? p.listings[0];
-            return <ProductCard key={p.erpNumber} product={p} listing={l} />;
+            return <ProductCard key={p.erpNumber} product={{ ...p, imageSrcs: productImageSrcs(p) }} listing={l} />;
           })}
         </div>
       )}

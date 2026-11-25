@@ -10,6 +10,7 @@ import { DescriptionBox } from "@/components/DescriptionBox";
 import { convert, fmtEur, fmtLocal, getFxRates } from "@/lib/fx";
 import { emailConfigured } from "@/lib/mail";
 import { fmtDate } from "@/lib/format";
+import { productImageSrcs } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +39,7 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
     include: { listings: { include: { country: true }, orderBy: { countryCode: "asc" } } },
   });
   if (!product) notFound();
-  const productImages = (() => {
-    try { return product.images ? (JSON.parse(product.images) as string[]) : []; }
-    catch { return []; }
-  })();
-  const galleryImages = [
-    product.imageUrl,
-    ...productImages,
-  ].filter((x, i, a): x is string => !!x && a.indexOf(x) === i).slice(0, 4);
+  const galleryImages = productImageSrcs(product);
 
   const snapshots = await prisma.snapshot.findMany({
     where: { erpNumber: erp, price: { not: null } },

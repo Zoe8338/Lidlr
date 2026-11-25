@@ -28,6 +28,11 @@ if (!args["no-manuals"]) {
   });
   console.log("MANUAL SUMMARY", JSON.stringify(manuals));
 }
+if (!args["no-images"]) {
+  const { fetchImages } = await import("../src/lib/images.ts");
+  const images = await fetchImages({ maxPerRun: typeof args.images === "string" ? Number(args.images) : 400 });
+  console.log("IMAGE SUMMARY", JSON.stringify(images));
+}
 if (args.leaflets) {
   const leaflets = await fetchLeaflets({ countries, downloadPdf: !args.nopdf });
   console.log("LEAFLET SUMMARY", JSON.stringify(leaflets));

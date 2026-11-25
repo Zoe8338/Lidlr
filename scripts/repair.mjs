@@ -2,6 +2,7 @@
 //   - missing English titles       -> batch translation backfill
 //   - missing description/specs    -> product-page fetch + parse + translate
 //   - missing manuals              -> product-page crawl + PDF archive
+//   - missing archived images      -> data/images/ copies of every product image
 //   - foreign (non-own-brand) rows -> report only; add --prune to delete them
 //
 //   npm run repair                 full pass over everything missing
@@ -27,15 +28,15 @@ const run = (s, a) =>
     resolve(r.status);
   });
 
-console.log("=== repair: 1/4 foreign rows (report only; add --prune to delete) ===");
+console.log("=== repair: 1/5 foreign rows (report only; add --prune to delete) ===");
 await run("scripts/prune.mjs", PRUNE ? ["--apply"] : []);
 
-console.log("\n=== repair: 2/4 missing English titles ===");
+console.log("\n=== repair: 2/5 missing English titles ===");
 const noEn = await prisma.product.count({ where: { titleEn: null } });
 console.log(`products without an English title: ${noEn}`);
 if (noEn) await run("scripts/translate.mjs", [Number.isFinite(LIMIT) ? `--limit=${Math.min(noEn, LIMIT)}` : "--limit=0"].filter((x) => !x.endsWith("limit=0")));
 
-console.log("\n=== repair: 3/4 missing manuals, descriptions, specs ===");
+console.log("\n=== repair: 3/5 missing manuals, descriptions, specs ===");
 const noDesc = await prisma.product.count({ where: { description: null } });
 const noManual = await prisma.product.count({ where: { manualCheckedAt: null } });
 console.log(`products without description: ${noDesc}, without manual check: ${noManual}`);
@@ -44,11 +45,20 @@ if (noDesc || noManual) {
   await run("scripts/manuals.mjs", []);
 }
 
-console.log("\n=== repair: 4/4 summary ===");
+console.log("\n=== repair: 4/5 missing image archive ===");
+const noImages = await prisma.product.count({ where: { storedImages: null } });
+console.log(`products without archived images: ${noImages}`);
+if (noImages) {
+  process.env.IMAGE_FETCH_PER_RUN = String(Number.isFinite(LIMIT) ? Math.min(noImages, LIMIT) : 1e9);
+  await run("scripts/images.mjs", []);
+}
+
+console.log("\n=== repair: 5/5 summary ===");
 const after = {
   products: await prisma.product.count(),
   titlesEn: await prisma.product.count({ where: { titleEn: { not: null } } }),
   descriptions: await prisma.product.count({ where: { description: { not: null } } }),
+  imageArchived: await prisma.product.count({ where: { NOT: { storedImages: null } } }),
   manuals: await prisma.manual.count(),
 };
 console.log(JSON.stringify(after, null, 2));
