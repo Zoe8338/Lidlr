@@ -457,3 +457,18 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
 @media (max-width: 400px) {
   .grid { grid-template-columns: 1fr; }
 }
+
+/* Currency toggle on the price-history chart */
+.chart-toggle { display: flex; gap: 6px; margin: 10px 0 8px; flex-wrap: wrap; }
+.chart-toggle button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chart-toggle button:hover { color: var(--text); border-color: var(--accent); }
+.chart-toggle button.active { background: var(--accent); border-color: var(--accent); color: #fff; }

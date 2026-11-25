@@ -27,7 +27,11 @@ free ECB reference-rate API (frankfurter.dev, no key, pegged BGN supported),
 table show the EUR equivalent first, with the local shop currency underneath
 (formatted the local way, e.g. «2 999,00 zł» / «4999 Ft»). Cheapest-country,
 sorting, min/max filters and the deals "biggest discount %" sort all operate
-on the EUR value, so PLN and EUR listings are compared fairly.
+on the EUR value, so PLN and EUR listings are compared fairly. The price-
+history chart follows the same scheme with an **EUR / Local toggle**: EUR mode
+plots every country on one shared axis (converted at the current ECB rate,
+marked "conv." in the legend); Local mode shows each line in its own currency
+— the raw snapshot values, one chart per currency when they differ.
 
 ## Product images
 

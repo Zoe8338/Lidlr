@@ -70,7 +70,12 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, palette.length)
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([cc, pts], i) => ({ cc, color: palette[i % palette.length], points: pts.slice(-120) }));
+    .map(([cc, pts], i) => ({
+      cc,
+      currency: product.listings.find((l) => l.countryCode === cc)?.currency ?? "EUR",
+      color: palette[i % palette.length],
+      points: pts.slice(-120),
+    }));
   const manuals = await prisma.manual.findMany({
     where: { erpNumber: erp },
     orderBy: { id: "asc" },
@@ -198,7 +203,7 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
       </div>
 
       <h2 className="section">Price history by country</h2>
-      <PriceChart series={chartSeries} />
+      <PriceChart series={chartSeries} fx={fx} />
 
       {manuals.length ? (
         <>
