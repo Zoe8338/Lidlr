@@ -10,13 +10,12 @@ import { currentAdmin } from "@/lib/admin";
 import { COUNTRIES } from "@/lib/lidl/catalog";
 import { fmtDate } from "@/lib/format";
 import {
-  adminAttachServerPdf,
   adminCreateLeaflet,
   adminDeleteLeaflet,
+  adminDeleteMedia,
   adminRunJob,
   adminSaveLeaflet,
-  adminUploadLeafletPdf,
-  type AdminJobStatus,
+  adminSetLeafletPdf,
 } from "./actions";
 import { readJobStatus } from "./job";
 import { readFlash } from "./flash";
@@ -28,6 +27,7 @@ import {
   adminSaveProduct,
   adminSaveSpecs,
 } from "./productActions";
+import { ToastStack, type ToastItem } from "@/components/Toast";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +38,7 @@ const TABS = [
   ["jobs", "Jobs"],
   ["leaflets", "Leaflets"],
   ["products", "Products"],
+  ["media", "Media"],
 ] as const;
 
 const COUNTRIES_CODES = COUNTRIES.filter((c) => c.enabled).map((c) => c.code);
@@ -63,29 +64,25 @@ function Tabs({ active }: { active: string }) {
   );
 }
 
-function Flash() {
+// Action results + background-job status as toasts at the top of the site,
+// each disappearing by itself after 10 seconds.
+function AdminToasts() {
+  const items: ToastItem[] = [];
   const flash = readFlash();
-  if (!flash) return null;
-  return (
-    <div className="notice" style={{ borderColor: flash.ok ? "var(--accent)" : "crimson" }}>
-      {flash.ok ? "✓ " : "✗ "}
-      {flash.message}
-    </div>
-  );
-}
-
-function JobStatusBox({ job }: { job: AdminJobStatus | null }) {
-  if (!job) return null;
-  const running = !job.finishedAt;
-  return (
-    <div className="notice" style={{ borderColor: running ? "var(--accent)" : job.ok ? "var(--accent)" : "crimson" }}>
-      <strong>{running ? "Running" : job.ok ? "Finished" : "Failed"}</strong>: {job.name}
-      {job.detail ? <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0", fontSize: 12 }}>{job.detail}</pre> : null}
-      <div style={{ fontSize: 12, opacity: 0.7 }}>
-        started {fmtDate(job.startedAt)} {job.finishedAt ? `· finished ${fmtDate(job.finishedAt)}` : "· refresh this page for updates"}
-      </div>
-    </div>
-  );
+  if (flash) {
+    items.push({ id: "flash", ok: flash.ok, title: flash.ok ? "✓ Done" : "✗ Failed", detail: flash.message });
+  }
+  const job = readJobStatus();
+  if (job) {
+    const running = !job.finishedAt;
+    items.push({
+      id: "job",
+      ok: running ? true : job.ok !== false,
+      title: running ? `Running: ${job.name}` : job.ok ? `Finished: ${job.name}` : `Failed: ${job.name}`,
+      detail: [job.detail, running ? `started ${fmtDate(job.startedAt)} — refresh for updates` : `finished ${fmtDate(job.finishedAt!)}`].filter(Boolean).join("\n"),
+    });
+  }
+  return <ToastStack items={items} />;
 }
 
 async function Overview() {
@@ -417,9 +414,9 @@ async function Leaflets({ cc }: { cc: string | null }) {
                       </div>
                     </form>
                     <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
-                      {/* One combined control: upload a file OR pick any PDF
-                          already on the server, then hit the matching button. */}
-                      <form action={adminUploadLeafletPdf} style={{ display: "grid", gap: 8 }}>
+                      {/* One control, one button: pick a file OR choose a PDF
+                          from the server list — whichever you filled in wins. */}
+                      <form action={adminSetLeafletPdf} style={{ display: "grid", gap: 8 }}>
                         <input type="hidden" name="id" value={l.id} />
                         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
                           <label className="meta">archived PDF — upload a file
@@ -427,13 +424,8 @@ async function Leaflets({ cc }: { cc: string | null }) {
                           </label>
                           {serverPdfs.length ? serverPdfSelect() : null}
                         </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button className="button ghost" type="submit">Upload chosen file</button>
-                          {serverPdfs.length ? (
-                            <button className="button ghost" type="submit" formAction={adminAttachServerPdf}>
-                              Use selected server PDF
-                            </button>
-                          ) : null}
+                        <div>
+                          <button className="button ghost" type="submit">Save PDF (upload file or use server selection)</button>
                         </div>
                       </form>
                     </div>
@@ -563,10 +555,132 @@ async function Products({ q }: { q: string }) {
   );
 }
 
+// ---- Media tab -------------------------------------------------------------
+
+type MediaFile = { name: string; rel: string; size: number };
+
+function listMedia(root: string, relPrefix = ""): MediaFile[] {
+  if (!fs.existsSync(root)) return [];
+  const out: MediaFile[] = [];
+  for (const e of fs.readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const rel = relPrefix ? `${relPrefix}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...listMedia(path.join(root, e.name), rel));
+    else if (e.isFile()) {
+      try {
+        out.push({ name: e.name, rel, size: fs.statSync(path.join(root, e.name)).size });
+      } catch {
+        // vanished mid-listing — ignore
+      }
+    }
+  }
+  return out;
+}
+
+const MEDIA_PAGE = 50;
+
+async function Media({ kind, page }: { kind: string; page: number }) {
+  const dataDirPath = dataDir();
+  const kinds = [
+    { id: "images", label: "Product images", dir: "images" },
+    { id: "leaflets", label: "Leaflet PDFs", dir: "leaflets" },
+    { id: "manuals", label: "Manual PDFs", dir: "manuals" },
+  ];
+  const stats = kinds.map((k) => {
+    const files = listMedia(path.join(dataDirPath, k.dir));
+    return { ...k, files, total: files.reduce((s, f) => s + f.size, 0) };
+  });
+  const active = stats.find((s) => s.id === kind);
+
+  let rows: { f: MediaFile; usedBy: string | null }[] = [];
+  let pageCount = 1;
+  if (active) {
+    pageCount = Math.max(1, Math.ceil(active.files.length / MEDIA_PAGE));
+    const slice = active.files.slice((page - 1) * MEDIA_PAGE, page * MEDIA_PAGE);
+    rows = await Promise.all(
+      slice.map(async (f) => {
+        if (active.id === "images") {
+          const n = await prisma.product.count({ where: { storedImages: { contains: f.name } } });
+          return { f, usedBy: n ? `${n} product${n === 1 ? "" : "s"}` : null };
+        }
+        if (active.id === "leaflets") {
+          const cc = f.rel.split("/")[0];
+          const l = await prisma.leaflet.findFirst({ where: { flyerId: f.name.replace(/\.pdf$/, "") }, select: { id: true, name: true, countryCode: true } });
+          return { f, usedBy: l ? `leaflet #${l.id} (${l.countryCode} · ${l.name})` : null };
+        }
+        const m = await prisma.manual.findFirst({ where: { storedPath: { contains: f.name } }, select: { erpNumber: true, title: true } });
+        return { f, usedBy: m ? `${m.erpNumber} — ${m.title.slice(0, 40)}` : null };
+      }),
+    );
+  }
+
+  return (
+    <>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+        {stats.map((s) => (
+          <Link
+            key={s.id}
+            href={`/admin?tab=media&kind=${s.id}`}
+            className="card"
+            style={s.id === kind ? { borderColor: "var(--accent)" } : undefined}
+          >
+            <div className="title">{s.label}</div>
+            <div className="meta">
+              {s.files.length} file{s.files.length === 1 ? "" : "s"} · {(s.total / 1024 / 1024 / 1024).toFixed(2)} GB
+            </div>
+            <div className="meta">browse &amp; delete →</div>
+          </Link>
+        ))}
+      </div>
+
+      {active ? (
+        <>
+          <h2 style={{ marginTop: 24 }}>
+            {active.label} — page {page}/{pageCount}
+          </h2>
+          <p className="meta">
+            “used by” shows what references the file. Deleting a used file is safe: leaflets flip to
+            “cover only”, manuals re-fetch on the next pass, products fall back to their other images.
+          </p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {rows.map(({ f, usedBy }) => (
+              <form key={f.rel} action={adminDeleteMedia} className="card" style={{ padding: "10px 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <input type="hidden" name="kind" value={active.id} />
+                <input type="hidden" name="file" value={f.rel} />
+                <code style={{ flex: "1 1 260px", fontSize: 12, wordBreak: "break-all" }}>{f.rel}</code>
+                <span className="meta">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                <span className="meta" style={{ color: usedBy ? "inherit" : "crimson" }}>
+                  {usedBy ?? "unclaimed"}
+                </span>
+                <button className="button ghost" type="submit" style={{ color: "crimson", borderColor: "crimson" }}>Delete</button>
+              </form>
+            ))}
+            {rows.length === 0 ? <div className="empty">Nothing stored here yet.</div> : null}
+          </div>
+          {pageCount > 1 ? (
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              {page > 1 ? <Link className="button ghost" href={`/admin?tab=media&kind=${active.id}&page=${page - 1}`}>← Prev</Link> : null}
+              {Array.from({ length: pageCount }, (_, i) => i + 1)
+                .filter((n) => Math.abs(n - page) <= 3 || n === 1 || n === pageCount)
+                .map((n) => (
+                  <Link key={n} className="button ghost" href={`/admin?tab=media&kind=${active.id}&page=${n}`} style={n === page ? { background: "var(--accent)", color: "var(--on-accent, #fff)", borderColor: "transparent" } : undefined}>
+                    {n}
+                  </Link>
+                ))}
+              {page < pageCount ? <Link className="button ghost" href={`/admin?tab=media&kind=${active.id}&page=${page + 1}`}>Next →</Link> : null}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <p className="meta" style={{ marginTop: 16 }}>Pick a category above to browse and manage the files stored on the server.</p>
+      )}
+    </>
+  );
+}
+
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string; cc?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; cc?: string; kind?: string; page?: string }>;
 }) {
   const user = await currentUser();
   if (!user) redirect("/login?next=/admin");
@@ -579,6 +693,8 @@ export default async function AdminPage({
   const tab = TABS.some(([id]) => id === sp.tab) ? sp.tab! : "overview";
   const q = (sp.q || "").trim().slice(0, 120);
   const cc = /^[A-Z]{2}$/.test(sp.cc || "") ? sp.cc! : null;
+  const mediaKind = ["images", "leaflets", "manuals"].includes(sp.kind || "") ? sp.kind! : "";
+  const mediaPage = Math.max(1, Number(sp.page) || 1);
 
   return (
     <div>
@@ -588,21 +704,12 @@ export default async function AdminPage({
         you leave this page.
       </p>
       <Tabs active={tab} />
-      <Flash />
-      {tab === "overview" ? (
-        <>
-          <JobStatusBox job={readJobStatus()} />
-          <Overview />
-        </>
-      ) : null}
-      {tab === "jobs" ? (
-        <>
-          <JobStatusBox job={readJobStatus()} />
-          <Jobs />
-        </>
-      ) : null}
+      <AdminToasts />
+      {tab === "overview" ? <Overview /> : null}
+      {tab === "jobs" ? <Jobs /> : null}
       {tab === "leaflets" ? <Leaflets cc={cc} /> : null}
       {tab === "products" ? <Products q={q} /> : null}
+      {tab === "media" ? <Media kind={mediaKind} page={mediaPage} /> : null}
     </div>
   );
 }

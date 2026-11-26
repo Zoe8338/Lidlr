@@ -369,6 +369,47 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
   font-size: 14px;
 }
 [data-theme="dark"] .input { background: var(--surface2); border-color: var(--border); }
+/* Toast notifications (fixed at the top, auto-dismiss after 10 s) */
+.toast-stack {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: grid;
+  gap: 8px;
+  width: min(92vw, 560px);
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-2, 0 8px 24px rgba(0, 0, 0, 0.15));
+  animation: toast-in 0.25s ease;
+}
+.toast.err { border-color: crimson; }
+.toast-body { flex: 1; display: grid; gap: 2px; font-size: 14px; overflow-wrap: anywhere; }
+.toast-body span { font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+.toast-close {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.toast-close:hover { color: var(--text); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Admin dashboard tabs */
 .admin-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
 .admin-tab {

@@ -236,7 +236,15 @@ export async function adminCreateLeaflet(formData: FormData) {
     const flyerId = f.flyerId || randomUUID();
     const uploaded = await pdfFromForm(formData);
     let pdf: { sha256: string; sizeBytes: number } | null = null;
-    if (uploaded) pdf = await storePdfBuffer(f.countryCode, flyerId, uploaded);
+    if (uploaded) {
+      pdf = await storePdfBuffer(f.countryCode, flyerId, uploaded);
+    } else {
+      // no file chosen — adopt a PDF already on the server if one was picked
+      const src = path.basename(String(formData.get("src") || ""));
+      if (src.endsWith(".pdf")) {
+        pdf = await adoptServerPdf(f.countryCode, src, flyerId);
+      }
+    }
     const row = await prisma.leaflet.create({
       data: {
         ...f,
@@ -245,7 +253,7 @@ export async function adminCreateLeaflet(formData: FormData) {
         ...(pdf ? { sha256: pdf.sha256, sizeBytes: pdf.sizeBytes, pdfStored: true, archivedAt: new Date() } : {}),
       },
     });
-    setFlash(`Created leaflet #${row.id} (${f.countryCode} · ${f.name}).`);
+    setFlash(`Created leaflet #${row.id} (${f.countryCode} · ${f.name})${pdf ? " with archived PDF" : ""}.`);
   } catch (err) {
     setFlash(err instanceof Error ? err.message : String(err), false);
   }
@@ -253,20 +261,49 @@ export async function adminCreateLeaflet(formData: FormData) {
   revalidatePath("/archive");
 }
 
-export async function adminUploadLeafletPdf(formData: FormData) {
+// Copies (if another leaflet uses the file) or renames (if unclaimed) an
+// existing server PDF into place for a leaflet, returning its hash + size.
+async function adoptServerPdf(cc: string, src: string, flyerId: string): Promise<{ sha256: string; sizeBytes: number }> {
+  const from = path.join(leafletDir(cc), src);
+  if (!fs.existsSync(from)) throw new Error("That file is no longer on the server");
+  const to = leafletPdfPath(cc, flyerId);
+  const claimedBy = await prisma.leaflet.findFirst({
+    where: { countryCode: cc, pdfStored: true, flyerId: src.replace(/\.pdf$/, "") },
+    select: { id: true },
+  });
+  if (from !== to) {
+    if (claimedBy) fs.copyFileSync(from, to);
+    else fs.renameSync(from, to);
+  }
+  const content = fs.readFileSync(to);
+  return { sha256: createHash("sha256").update(content).digest("hex"), sizeBytes: content.length };
+}
+
+// One action for both ways of setting a leaflet's archived PDF: an uploaded
+// file wins; otherwise the selected server PDF (from the `src` dropdown) is
+// used. This is what makes "choose from the menu" actually work.
+export async function adminSetLeafletPdf(formData: FormData) {
   await guard();
   try {
     const id = Number(formData.get("id") || 0);
     const leaflet = await prisma.leaflet.findUnique({ where: { id } });
     if (!leaflet) throw new Error("Leaflet not found");
     const buf = await pdfFromForm(formData);
-    if (!buf) throw new Error("Choose a PDF file first");
-    const { sha256, sizeBytes } = await storePdfBuffer(leaflet.countryCode, leaflet.flyerId, buf);
+    let sha256: string;
+    let sizeBytes: number;
+    if (buf) {
+      ({ sha256, sizeBytes } = await storePdfBuffer(leaflet.countryCode, leaflet.flyerId, buf));
+      setFlash(`Uploaded PDF for #${id} (${(sizeBytes / 1024 / 1024).toFixed(1)} MB).`);
+    } else {
+      const src = path.basename(String(formData.get("src") || ""));
+      if (!src.endsWith(".pdf")) throw new Error("Choose a file to upload or pick a PDF from the server list first");
+      ({ sha256, sizeBytes } = await adoptServerPdf(leaflet.countryCode, src, leaflet.flyerId));
+      setFlash(`Attached ${src} to leaflet #${id} (${(sizeBytes / 1024 / 1024).toFixed(1)} MB).`);
+    }
     await prisma.leaflet.update({
       where: { id },
       data: { sha256, sizeBytes, pdfStored: true, archivedAt: new Date() },
     });
-    setFlash(`PDF stored for #${id} (${(sizeBytes / 1024 / 1024).toFixed(1)} MB).`);
   } catch (err) {
     setFlash(err instanceof Error ? err.message : String(err), false);
   }
@@ -274,37 +311,47 @@ export async function adminUploadLeafletPdf(formData: FormData) {
   revalidatePath("/archive");
 }
 
-export async function adminAttachServerPdf(formData: FormData) {
+// Media manager: delete a file from data/images, data/leaflets/<CC>/ or
+// data/manuals/ and keep the database rows consistent with the disk.
+export async function adminDeleteMedia(formData: FormData) {
   await guard();
   try {
-    const id = Number(formData.get("id") || 0);
-    const leaflet = await prisma.leaflet.findUnique({ where: { id } });
-    if (!leaflet) throw new Error("Leaflet not found");
-    const src = path.basename(String(formData.get("src") || "")); // basename blocks path traversal
-    if (!src.endsWith(".pdf")) throw new Error("Pick a PDF from the list");
-    const from = path.join(leafletDir(leaflet.countryCode), src);
-    if (!fs.existsSync(from)) throw new Error("That file is no longer on the server");
-    const to = leafletPdfPath(leaflet.countryCode, leaflet.flyerId);
-    // If another leaflet already uses this file, copy it so that one keeps working.
-    const claimedBy = await prisma.leaflet.findFirst({
-      where: { countryCode: leaflet.countryCode, pdfStored: true, flyerId: src.replace(/\.pdf$/, ""), id: { not: id } },
-      select: { id: true },
-    });
-    if (from !== to) {
-      if (claimedBy) fs.copyFileSync(from, to);
-      else fs.renameSync(from, to);
+    const kind = String(formData.get("kind") || "");
+    const file = path.basename(String(formData.get("file") || "")); // basename blocks path traversal
+    if (!file) throw new Error("File required");
+    if (kind === "image") {
+      const p = path.join(dataDir(), "images", file);
+      if (!fs.existsSync(p)) throw new Error("File not found");
+      fs.rmSync(p);
+      setFlash(`Deleted image ${file}. Products that used it fall back to their other images.`);
+    } else if (kind === "leaflet") {
+      const cc = String(formData.get("cc") || "").toUpperCase();
+      if (!/^[A-Z]{2}$/.test(cc)) throw new Error("Country code required");
+      const p = path.join(dataDir(), "leaflets", cc, file);
+      if (!fs.existsSync(p)) throw new Error("File not found");
+      fs.rmSync(p);
+      const flyerId = file.replace(/\.pdf$/, "");
+      const r = await prisma.leaflet.updateMany({ where: { countryCode: cc, flyerId }, data: { pdfStored: false } });
+      setFlash(`Deleted leaflet PDF ${cc}/${file}${r.count ? `; ${r.count} leaflet row(s) now show “cover only”` : ""}.`);
+    } else if (kind === "manual") {
+      // manuals live in per-product subfolders: data/manuals/<erp>/<sha>.pdf —
+      // `file` is the path relative to data/manuals, verified to stay inside it
+      const root = path.join(dataDir(), "manuals");
+      const p = path.resolve(root, file);
+      if (!p.startsWith(root + path.sep)) throw new Error("Invalid path");
+      if (!fs.existsSync(p)) throw new Error("File not found");
+      const base = path.basename(p);
+      fs.rmSync(p);
+      try {
+        if (fs.readdirSync(path.dirname(p)).length === 0) fs.rmdirSync(path.dirname(p));
+      } catch {
+        // folder not empty or already gone — fine
+      }
+      const r = await prisma.manual.updateMany({ where: { storedPath: { contains: base } }, data: { stored: false, storedPath: null } });
+      setFlash(`Deleted manual file ${file}${r.count ? `; ${r.count} manual row(s) reset and will re-fetch` : ""}.`);
+    } else {
+      throw new Error("Unknown media kind");
     }
-    const buf = fs.readFileSync(to);
-    await prisma.leaflet.update({
-      where: { id },
-      data: {
-        sha256: createHash("sha256").update(buf).digest("hex"),
-        sizeBytes: buf.length,
-        pdfStored: true,
-        archivedAt: new Date(),
-      },
-    });
-    setFlash(`Attached ${src} to leaflet #${id}.`);
   } catch (err) {
     setFlash(err instanceof Error ? err.message : String(err), false);
   }
