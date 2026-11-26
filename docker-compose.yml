@@ -18,15 +18,18 @@ services:
       # Set to "1" to disable the scheduler and drive crawls yourself.
       SCHEDULER_DISABLED: ""
       # Auto-translate titles + descriptions (default target English).
-      # All translation runs on the bundled LibreTranslate sidecar below — no
-      # external requests, no rate limits. Point LIBRETRANSLATE_URL at another
-      # instance, or set it empty to disable translation entirely.
+      # Chain: Mistral AI first when MISTRAL_API_KEY is set (best quality),
+      # then the bundled LibreTranslate sidecar — local, no rate limits —
+      # finishes whatever Mistral refuses. Set both empty to disable
+      # translation entirely.
       AUTO_TRANSLATE: "${AUTO_TRANSLATE:-1}"
       TRANSLATE_TARGET: "${TRANSLATE_TARGET:-en}"
       LIBRETRANSLATE_URL: "${LIBRETRANSLATE_URL-http://libretranslate:5000}"
       LIBRETRANSLATE_API_KEY: "${LIBRETRANSLATE_API_KEY:-}"
+      MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
+      MISTRAL_MODEL: "${MISTRAL_MODEL:-mistral-small-latest}"
       # 24 h double-check pass: re-translates a rotating batch through the
-      # sidecar and fixes stored values that don't match.
+      # provider chain and fixes stored values that don't match.
       RECONCILE_LIMIT: "${RECONCILE_LIMIT:-}"
       # Session signing secret. Leave empty to auto-generate and persist one
       # in the data volume, or set your own random string.

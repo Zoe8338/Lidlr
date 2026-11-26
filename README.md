@@ -184,13 +184,19 @@ description and short highlight/spec lines (e.g. "Gewicht: 2 kg"):
 ## Auto-translated names
 
 Set `AUTO_TRANSLATE=1` (default in docker-compose) and every newly crawled
-product title is translated to `TRANSLATE_TARGET` (default `en`) — **entirely
-on the bundled LibreTranslate sidecar**: no external requests, no rate limits,
-no API keys.
+product title is translated to `TRANSLATE_TARGET` (default `en`) through a
+two-provider chain:
+
+1. **Mistral AI first** (when `MISTRAL_API_KEY` is set in `.env`) — best
+   quality, EU-hosted, very cheap in batches; model via `MISTRAL_MODEL`
+   (default `mistral-small-latest`).
+2. **Bundled LibreTranslate sidecar finishes it all** — when Mistral refuses
+   (429/timeout/error), the local sidecar completes the request; no rate
+   limits. With no Mistral key, everything runs locally.
 
 A **24-hour double-check** runs automatically: a scheduled pass re-translates a
 rotating batch (`RECONCILE_LIMIT`, default 400) of already-translated products
-through the sidecar and fixes whatever is wrong — empty values, untranslated
+through the same chain and fixes whatever is wrong — empty values, untranslated
 originals, or values that don't match the fresh translation.
 
 Translations are:
@@ -213,7 +219,8 @@ keep the original text; they're retried automatically by later passes, so
 nothing breaks. Models persist in the `lt-models` volume.
 
 - Opt out: set `LIBRETRANSLATE_URL=` (empty) in `.env` and remove the service
-  with `docker compose up -d --build --remove-orphans`.
+  with `docker compose up -d --build --remove-orphans` (translation then runs
+  on Mistral alone; disable that too for no translation).
 - External instance: `LIBRETRANSLATE_URL=https://my-lt.example.com` (+
   `LIBRETRANSLATE_API_KEY` if it needs one).
 - Trim RAM: `LIBRETRANSLATE_LANGS=en,de,fr,pl,pt,es` in `.env` limits loaded
