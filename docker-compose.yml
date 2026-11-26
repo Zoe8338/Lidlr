@@ -68,6 +68,9 @@ services:
     environment:
       LT_DISABLE_WEB_UI: "true"
       LT_UPDATE_MODELS: "false"
+      # gunicorn workers — defaults to 4; raise (e.g. LIBRETRANSLATE_WORKERS=8)
+      # only if the host has more idle cores for it to use
+      WEB_WORKERS: "${LIBRETRANSLATE_WORKERS:-4}"
       # limit loaded models (RAM); extend via LIBRETRANSLATE_LANGS in .env,
       # e.g. add hr,sl,el,lt,lv,et if you track those shops heavily
       LT_LOAD_ONLY: "${LIBRETRANSLATE_LANGS:-en,de,fr,nl,it,es,pt,pl,cs,sk,hu,ro,bg,fi,sv,da}"
