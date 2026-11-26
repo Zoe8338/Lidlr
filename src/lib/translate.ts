@@ -7,7 +7,10 @@
 
 const TARGET = process.env.TRANSLATE_TARGET || "en";
 const CACHE = new Map<string, string | null>();
-const BATCH = 40;
+// small batches: LibreTranslate needs to finish a request well inside the
+// client timeout, or aborted retries pile up on its workers and everything
+// starts timing out (the sidecar is CPU-bound — 40-line batches exceeded 60 s)
+const BATCH = 10;
 let lastWarn = 0;
 
 const LIBRE_URL = process.env.LIBRETRANSLATE_URL?.trim().replace(/\/$/, "");
