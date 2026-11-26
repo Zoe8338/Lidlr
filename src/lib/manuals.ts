@@ -192,15 +192,15 @@ async function storeManualPdf(erp: string, url: string): Promise<{ stored: boole
   }
 }
 
-// Products are checked via one of their listing pages. Manuals are currently
-// published mainly on the German (and some other) country sites, so prefer
-// those hosts, then fall back to any other listing URL.
-function preferredUrls(listings: { url: string | null; countryCode: string }[], tries = 2): string[] {
-  const good = listings.filter((l) => l.url).map((l) => ({ url: l.url!, cc: l.countryCode }));
+// Products are checked via one of their listing pages. Source priority:
+// the German site first (manuals + descriptions are fullest there), and if
+// the product isn't on it / its page can't be fetched, the earliest-captured
+// listing ("the first crawl", lowest Listing id) is used instead.
+function preferredUrls(listings: { id: number; url: string | null; countryCode: string }[], tries = 2): string[] {
+  const good = listings.filter((l) => l.url).map((l) => ({ id: l.id, url: l.url!, cc: l.countryCode }));
   const ranked = [
-    ...good.filter((l) => l.cc === "DE"),
-    ...good.filter((l) => ["AT", "NL", "CZ", "SK", "HR", "SI", "IE", "FI", "MT", "LU", "CY"].includes(l.cc)),
-    ...good,
+    ...good.filter((l) => l.cc === "DE").sort((a, b) => a.id - b.id),
+    ...good.filter((l) => l.cc !== "DE").sort((a, b) => a.id - b.id),
   ];
   const urls: string[] = [];
   for (const l of ranked) {
@@ -227,7 +227,7 @@ export async function fetchManuals(
     select: {
       erpNumber: true,
       description: true,
-      listings: { select: { url: true, countryCode: true } },
+      listings: { select: { id: true, url: true, countryCode: true } },
       trackings: { select: { id: true } },
     },
     take: 500,
