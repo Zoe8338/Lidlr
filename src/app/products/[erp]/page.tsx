@@ -144,7 +144,12 @@ export default async function ProductPage({ params }: { params: Promise<{ erp: s
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             {product.descriptionEn || product.description ? (
               <div style={{ flex: 2, minWidth: 260 }}>
-                <DescriptionBox primary={product.descriptionEn || product.description} alt={product.description} />
+                {/* English-only: the original-language text is shown only as a
+                    fallback while no translation exists yet. */}
+                <DescriptionBox
+                  primary={product.descriptionEn || product.description}
+                  alt={product.descriptionEn ? null : product.description}
+                />
               </div>
             ) : (
               <p style={{ flex: 2, minWidth: 260, margin: 0, color: "var(--muted)" }}>

@@ -291,10 +291,18 @@ so the dashboard stays unlisted). It has four tabs:
   or delete one (removes its archived PDF and offers too). Moving a leaflet to
   another country or flyer ID moves its archived PDF with it.
 - **Products** — search by ERP number/title/brand, edit any product field
-  (titles, brand, description, specs — original and English), mark a product
-  as removed, force an immediate re-translation, clear stored translations so
+  (titles, brand, description — original and English), mark a product as
+  removed, force an immediate re-translation, clear stored translations so
   the backfill pass retries them, re-fetch description + manuals from Lidl, or
-  delete the product entirely (FK-safe, like `npm run prune`).
+  delete the product entirely (FK-safe, like `npm run prune`). Each product
+  also has an **info-table editor**: add or remove label/value rows (the
+  spec list shown next to the description on the product page), up to three
+  new rows per save.
+
+The public product page shows the **English description only** — the
+original-language text appears only as a fallback while no English version
+exists yet. The specs/info table likewise always renders the English rows
+(both `specs` and `specsEn` columns are written by the admin editor).
 
 Security notes: admin status is evaluated server-side on every request from
 the `ADMIN_EMAILS` allowlist — nothing is stored in the database or in the

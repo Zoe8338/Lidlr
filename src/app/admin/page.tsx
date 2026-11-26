@@ -26,6 +26,7 @@ import {
   adminResetTranslations,
   adminRetranslateProduct,
   adminSaveProduct,
+  adminSaveSpecs,
 } from "./productActions";
 
 export const dynamic = "force-dynamic";
@@ -426,6 +427,46 @@ async function Leaflets({ cc }: { cc: string | null }) {
   );
 }
 
+function InfoTableEditor({ erp, specsRaw }: { erp: string; specsRaw: string | null }) {
+  let rows: { k: string; v: string }[] = [];
+  try {
+    const parsed = specsRaw ? (JSON.parse(specsRaw) as { k: string; v: string }[]) : [];
+    if (Array.isArray(parsed)) rows = parsed.filter((r) => r && typeof r.k === "string");
+  } catch {
+    // unparseable stored JSON — start clean rather than crash
+  }
+  return (
+    <details style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+        Info table (the label/value list shown next to the description) — {rows.length} row{rows.length === 1 ? "" : "s"}
+      </summary>
+      <form action={adminSaveSpecs} style={{ display: "grid", gap: 10, marginTop: 10 }}>
+        <input type="hidden" name="erp" value={erp} />
+        <input type="hidden" name="specCount" value={rows.length} />
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) 2fr auto", gap: 8, alignItems: "center" }}>
+            <input className="input" name={`specK${i}`} defaultValue={r.k} placeholder="label" />
+            <input className="input" name={`specV${i}`} defaultValue={r.v} placeholder="value" />
+            <label className="check" style={{ margin: 0 }}>
+              <input type="checkbox" name={`specDel${i}`} /> remove
+            </label>
+          </div>
+        ))}
+        <div className="meta">Add up to three new rows (label → value) per save:</div>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) 2fr", gap: 8 }}>
+            <input className="input" name={`newK${i}`} placeholder="new label" />
+            <input className="input" name={`newV${i}`} placeholder="new value" />
+          </div>
+        ))}
+        <div>
+          <button className="button" type="submit">Save info table</button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
 async function Products({ q }: { q: string }) {
   const results = q
     ? await prisma.product.findMany({
@@ -475,12 +516,6 @@ async function Products({ q }: { q: string }) {
               <label className="meta">description (English)
                 <textarea className="input" name="descriptionEn" defaultValue={p.descriptionEn ?? ""} rows={3} style={{ width: "100%" }} />
               </label>
-              <label className="meta">specs (original)
-                <textarea className="input" name="specs" defaultValue={p.specs ?? ""} rows={3} style={{ width: "100%" }} />
-              </label>
-              <label className="meta">specs (English)
-                <textarea className="input" name="specsEn" defaultValue={p.specsEn ?? ""} rows={3} style={{ width: "100%" }} />
-              </label>
               <label className="check">
                 <input type="checkbox" name="removed" defaultChecked={p.removed} />
                 mark as removed (hides it from the catalog without deleting history)
@@ -492,6 +527,7 @@ async function Products({ q }: { q: string }) {
                 <button className="button ghost" type="submit" formAction={adminRefetchDetails}>Re-fetch description + manuals from Lidl</button>
               </div>
             </form>
+            <InfoTableEditor erp={p.erpNumber} specsRaw={p.specsEn ?? p.specs} />
             <form action={adminDeleteProduct} style={{ marginTop: 8 }}>
               <input type="hidden" name="erp" value={p.erpNumber} />
               <button className="button ghost" type="submit" style={{ color: "crimson", borderColor: "crimson" }}>

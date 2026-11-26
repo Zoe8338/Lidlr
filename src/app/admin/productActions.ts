@@ -30,8 +30,10 @@ export async function adminSaveProduct(formData: FormData) {
       brandName: clip(formData.get("brandName"), 100),
       description: clip(formData.get("description")),
       descriptionEn: clip(formData.get("descriptionEn")),
-      specs: clip(formData.get("specs")),
-      specsEn: clip(formData.get("specsEn")),
+      // specs are managed by the dedicated info-table editor; keep the stored
+      // value when the raw fields aren't part of the submitted form
+      specs: formData.has("specs") ? clip(formData.get("specs")) : p.specs,
+      specsEn: formData.has("specsEn") ? clip(formData.get("specsEn")) : p.specsEn,
       removed: formData.get("removed") === "on",
     },
   });
@@ -103,6 +105,41 @@ export async function adminDeleteProduct(formData: FormData) {
   setFlash(`Deleted product ${erp} (with its listings, snapshots, trackings, notifications and manuals).`);
   revalidatePath("/admin");
   revalidatePath("/products");
+}
+
+export async function adminSaveSpecs(formData: FormData) {
+  await guard();
+  const erp = String(formData.get("erp") || "").trim();
+  const p = await prisma.product.findUnique({ where: { erpNumber: erp }, select: { erpNumber: true } });
+  if (!p) throw new Error("Unknown product");
+
+  const count = Number(formData.get("specCount") || 0);
+  const rows: { k: string; v: string }[] = [];
+  const seen = new Set<string>();
+  const push = (rawK: FormDataEntryValue | null, rawV: FormDataEntryValue | null) => {
+    const k = String(rawK ?? "").trim().slice(0, 100);
+    const v = String(rawV ?? "").trim().slice(0, 300);
+    if (!k && !v) return;
+    const key = k.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ k, v });
+  };
+  for (let i = 0; i < count; i++) {
+    if (formData.get(`specDel${i}`) === "on") continue;
+    push(formData.get(`specK${i}`), formData.get(`specV${i}`));
+  }
+  // up to three brand-new rows per save
+  for (let i = 0; i < 3; i++) {
+    push(formData.get(`newK${i}`), formData.get(`newV${i}`));
+  }
+
+  const json = rows.length ? JSON.stringify(rows) : null;
+  // written to both columns so the site always shows the (English) table
+  await prisma.product.update({ where: { erpNumber: erp }, data: { specs: json, specsEn: json } });
+  setFlash(`Saved info table for ${erp}: ${rows.length} row${rows.length === 1 ? "" : "s"}.`);
+  revalidatePath("/admin");
+  revalidatePath(`/products/${erp}`);
 }
 
 export async function adminRefetchDetails(formData: FormData) {
