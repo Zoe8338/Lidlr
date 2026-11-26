@@ -90,7 +90,7 @@ stops the built-in scheduler.
 | `npm run crawl -- --countries=DE,FR,PT --max=100` | Crawl named countries (all `≤ max` items per brand), upsert products/prices. Add `--brands=crivit,parkside` to narrow, `--notify` to also evaluate + send notifications, `--leaflets` / `--manuals=<n>` to include those passes, `--no-manuals` to skip the automatic manual+description pass. |
 | `npm run refresh -- --countries=DE,AT,FR,IT,ES,NL,BE,PL,PT --max=100` | **One command: crawl + ParkPrice import.** Flags go to the crawl; `--pp-\*` flags go to the import (`--pp-max=500`, `--pp-delay=5000`, `--pp-offset`, `--pp-refetch`, `--pp-dry-run`); `--no-parkprice` for crawl only. |
 | `npm run parkprice -- --max=500` | Import ParkPrice product metadata only (English titles, IAN match, images **and manual PDF links**) for products we also track. Polite: single-threaded, 3 s between requests, resumable via `data/parkprice-progress.json`; `--probe=20` samples without writes, `--dry-run` parses without writing. |
-| `npm run repair` | **Check every product and fix what's missing:** reports foreign rows, then backfills missing English titles, missing descriptions/specs, missing manuals and missing image archives in one pass. `-- --limit=500` caps per-phase count, `-- --prune` additionally **deletes** the foreign products (dry report by default); repeat runs (or a cron) drain the rest — everything is idempotent. Translation rides the Google → LibreTranslate chain with growing backoff, so a 429 just slows the run, it doesn't end it. |
+| `npm run repair` | **Check every product and fix what's missing:** reports foreign rows, then backfills missing English titles, missing descriptions/specs, missing manuals and missing image archives in one pass. `-- --limit=500` caps per-phase count, `-- --prune` additionally **deletes** the foreign products (dry report by default); repeat runs (or a cron) drain the rest — everything is idempotent. Translation runs on the bundled LibreTranslate sidecar with growing backoff, so a hiccup just slows the run, it doesn't end it. |
 | `npm run translate -- --limit=200` | Backfill English titles only (`-- --dry-run` previews). Also used by `refresh`/`repair`. |
 | `npm run reconcile -- --limit=400` | **Translation double-check** (also runs automatically every 24 h): re-translates a rotating batch through Google and fixes stored titles/descriptions/specs that are empty, untranslated, `LT:` artifacts, or differ from Google. `-- --dry-run` previews, `-- --limit` caps the batch. |
 | `npm run prune` | List products whose brand/title is not a tracked Lidl own-brand (sponsored search results that slipped in before brand filtering). `-- --apply` deletes them **and** their listings/snapshots/trackings/manuals. Dry run by default. |
@@ -184,22 +184,14 @@ description and short highlight/spec lines (e.g. "Gewicht: 2 kg"):
 ## Auto-translated names
 
 Set `AUTO_TRANSLATE=1` (default in docker-compose) and every newly crawled
-product title is translated to `TRANSLATE_TARGET` (default `en`), with the
-bundled **LibreTranslate sidecar as the safety net**:
+product title is translated to `TRANSLATE_TARGET` (default `en`) — **entirely
+on the bundled LibreTranslate sidecar**: no external requests, no rate limits,
+no API keys.
 
-1. **Free Google endpoints first** — three interchangeable endpoints
-   (`translate_a/single`, `translate_a/t`, `clients5.google.com`) rotate on
-   rate limits; each has its own rate bucket, so a 429 on one often succeeds on
-   the next.
-2. **LibreTranslate finishes it all** — when every Google endpoint refuses, the
-   bundled sidecar (see docker-compose) completes the request. It is
-   self-hosted, so it has no rate limit. While Google is throttled, requests
-   ride LibreTranslate for 10 minutes before Google is retried.
-3. **24-hour double-check** — a scheduled pass re-translates a rotating batch
-   (`RECONCILE_LIMIT`, default 400) of already-translated products through
-   Google and fixes whatever is wrong: empty values, untranslated originals,
-   `LT:` artifacts, or anything that doesn't match Google's output (Google is
-   the reference).
+A **24-hour double-check** runs automatically: a scheduled pass re-translates a
+rotating batch (`RECONCILE_LIMIT`, default 400) of already-translated products
+through the sidecar and fixes whatever is wrong — empty values, untranslated
+originals, or values that don't match the fresh translation.
 
 Translations are:
 
@@ -216,9 +208,9 @@ Failures degrade silently — the original name is kept and retried next run.
 
 docker-compose ships a `libretranslate` service (`libretranslate/libretranslate:latest`,
 web UI disabled). On **first start it downloads the language models
-(~5 minutes, ~2 GB disk)** — until then requests fall back to it fail and
-Google keeps carrying the load, so nothing breaks. Models persist in the
-`lt-models` volume.
+(~5 minutes, ~2 GB disk)** — until it's ready, translations simply fail and
+keep the original text; they're retried automatically by later passes, so
+nothing breaks. Models persist in the `lt-models` volume.
 
 - Opt out: set `LIBRETRANSLATE_URL=` (empty) in `.env` and remove the service
   with `docker compose up -d --build --remove-orphans`.

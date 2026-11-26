@@ -18,16 +18,15 @@ services:
       # Set to "1" to disable the scheduler and drive crawls yourself.
       SCHEDULER_DISABLED: ""
       # Auto-translate titles + descriptions (default target English).
-      # Primary providers are the free Google endpoints (rate-limited); when they
-      # refuse, the bundled LibreTranslate sidecar below finishes the job. Point
-      # LIBRETRANSLATE_URL at any other instance, or set it empty to skip the
-      # sidecar (translation then depends on Google alone).
+      # All translation runs on the bundled LibreTranslate sidecar below — no
+      # external requests, no rate limits. Point LIBRETRANSLATE_URL at another
+      # instance, or set it empty to disable translation entirely.
       AUTO_TRANSLATE: "${AUTO_TRANSLATE:-1}"
       TRANSLATE_TARGET: "${TRANSLATE_TARGET:-en}"
       LIBRETRANSLATE_URL: "${LIBRETRANSLATE_URL-http://libretranslate:5000}"
       LIBRETRANSLATE_API_KEY: "${LIBRETRANSLATE_API_KEY:-}"
-      # 24 h double-check pass: re-translates a rotating batch through Google
-      # and fixes stored values that don't match.
+      # 24 h double-check pass: re-translates a rotating batch through the
+      # sidecar and fixes stored values that don't match.
       RECONCILE_LIMIT: "${RECONCILE_LIMIT:-}"
       # Session signing secret. Leave empty to auto-generate and persist one
       # in the data volume, or set your own random string.
@@ -54,10 +53,10 @@ services:
       LEAFLET_MAX_PDF_MB: "${LEAFLET_MAX_PDF_MB:-60}"
 
 
-  # Bundled translation engine (Argos models) — translations on your own box,
-  # no external rate limits. First start downloads the language models
-  # (~5 min, ~2 GB disk); they persist in the lt-models volume. RAM can be
-  # trimmed by listing fewer languages in LIBRETRANSLATE_LANGS.
+  # The only translation engine — all on your own box, no external requests,
+  # no rate limits. First start downloads the language models (~5 min,
+  # ~2 GB disk); they persist in the lt-models volume. RAM can be trimmed by
+  # listing fewer languages in LIBRETRANSLATE_LANGS.
   libretranslate:
     image: libretranslate/libretranslate:latest
     container_name: lidlr-translate

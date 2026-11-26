@@ -1,10 +1,10 @@
 // Double-check pass (24 h cadence, also `npm run reconcile`): re-translate a
-// rotating batch of already-translated products through the primary Google
-// endpoints and compare against what is stored. Whatever is wrong is fixed —
-// stored value missing/empty, identical to the untranslated original, a
-// LibreTranslate "LT:" artifact), or simply different from Google's output
-// (Google is the reference). Values Google can not provide right now are left
-// untouched and picked up by the next pass.
+// rotating batch of already-translated products through the LibreTranslate
+// sidecar and compare against what is stored. Whatever is wrong is fixed —
+// stored value missing/empty or identical to the untranslated original, or
+// different from the sidecar's fresh output (which is the reference). Values
+// that can not be re-translated right now are left untouched and picked up by
+// the next pass.
 //
 //   npm run reconcile                check 400 products
 //   npm run reconcile -- --limit=100
