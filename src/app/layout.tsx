@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { currentUser, getTheme } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/admin";
 import { logout } from "@/app/actions";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { CookieBanner } from "@/components/CookieBanner";
@@ -60,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/new">New items</Link>
               <Link href="/archive">Archive</Link>
               <Link href="/alerts">Tracking</Link>
+              {user && isAdminEmail(user.email) ? <Link href="/admin">Admin</Link> : null}
             </nav>
             <div className="spacer" />
             <ThemeToggle />

@@ -54,6 +54,9 @@ services:
       LEAFLET_MAX_VALIDITY_DAYS: "${LEAFLET_MAX_VALIDITY_DAYS:-45}"
       # Refuse PDFs larger than this (MB)
       LEAFLET_MAX_PDF_MB: "${LEAFLET_MAX_PDF_MB:-60}"
+      # Admin dashboard (/admin): comma-separated emails allowed to use it.
+      # Empty = dashboard disabled (its route returns 404 to everyone).
+      ADMIN_EMAILS: "${ADMIN_EMAILS:-}"
 
 
   # The only translation engine — all on your own box, no external requests,

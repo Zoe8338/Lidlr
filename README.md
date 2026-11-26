@@ -264,7 +264,30 @@ resumes where it stopped. Re-run after new crawls to pick up newly matched IANs
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
 shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `RESEND_API_KEY`, `SITE_URL`,
-`CRAWL_SECRET`, `SCHEDULER_DISABLED`.
+`CRAWL_SECRET`, `SCHEDULER_DISABLED`, `ADMIN_EMAILS`.
+
+### Admin dashboard
+
+Set `ADMIN_EMAILS="you@example.com"` (comma-separated for more than one) in
+`.env` and rebuild (`sudo docker compose up -d --build`). After signing in with
+a login code sent to one of those addresses you get an **Admin** link in the
+nav and a dashboard at `/admin` where you can:
+
+- start crawls (all storefronts or one country) and leaflet fetches,
+- run maintenance passes: missing-title translation, manuals + descriptions,
+  image archiving, translation double-check (reconcile), offer re-evaluation,
+- see per-country crawler state (last crawl / last leaflet fetch),
+- rename leaflets, fix validity dates, or delete a leaflet (removes its
+  archived PDF and offers too).
+
+Security notes: admin status is evaluated server-side on every request from
+the `ADMIN_EMAILS` allowlist — nothing is stored in the database or in the
+cookie, so a stolen/normal user session never grants admin rights. With the
+allowlist empty (default) `/admin` returns 404 to everyone, including signed-in
+users, and the "Fetch latest leaflets" button on the Archive page is hidden.
+Sign-in itself stays passwordless: a 6-digit code is emailed to the address,
+so possessing the mailbox is what proves identity — the same trust model as
+the rest of the app, with no extra password to leak.
 
 Without Docker Compose (e.g. on a NAS or single Docker host):
 
@@ -387,8 +410,13 @@ newest snapshots of each country listing:
 Delivery:
 
 - **Email**: preferred is your **own SMTP server** — set `SMTP_HOST`, `SMTP_PORT`
-  (587), `SMTP_USER`, `SMTP_PASS`, `SECURE` (1 for port 465), `MAIL_FROM`
-  (Gmail: use an App Password). Without SMTP, Resend (`RESEND_API_KEY`) is used;
+  (587), `SMTP_USER`, `SMTP_PASS`, `SECURE` (1 for port 465), `MAIL_FROM`.
+  `SMTP_PASS` is the mailbox's real password in plain text (it never leaves your
+  server). **Gmail does not accept your normal login password** — enable 2FA on
+  the Google account, then create a 16-character **App Password**
+  (myaccount.google.com → Security → App passwords) and put that in `SMTP_PASS`;
+  Google shows it with spaces but it works with or without them. Without SMTP,
+  Resend (`RESEND_API_KEY`) is used;
   either provider also delivers the login codes. `SITE_URL` builds the links.
 - **WhatsApp** via the free [CallMeBot](https://www.callmebot.com/blog/free-api-for-whatsapp-messages/)
   gateway: each user gets their own key from the bot and enters it on the Tracking page

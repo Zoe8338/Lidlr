@@ -150,6 +150,8 @@ export async function deleteAccount() {
 }
 
 export async function fetchLeafletsAction() {
+  const { currentAdmin } = await import("@/lib/admin");
+  if (!(await currentAdmin())) throw new Error("Admin sign-in required");
   const { fetchLeaflets } = await import("@/lib/leaflets");
   await fetchLeaflets();
   revalidatePath("/archive");

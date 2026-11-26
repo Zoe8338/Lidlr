@@ -356,6 +356,16 @@ form.inline input[type="checkbox"] { width: auto; min-width: 0; accent-color: va
   grid-template-columns: 1fr 1fr;
   gap: 0 12px;
 }
+/* Generic admin inputs */
+.input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+[data-theme="dark"] .input { background: var(--surface2); border-color: var(--border); }
 .field-grid .field:first-child { grid-column: 1 / -1; }
 .check { display: flex; gap: 8px; align-items: center; margin: 6px 0; font-size: 14px; }
 .modal-hint { color: var(--muted); font-size: 12.5px; margin: 8px 0 12px; }
