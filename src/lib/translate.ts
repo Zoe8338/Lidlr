@@ -100,7 +100,11 @@ async function withRetries(
       consecutiveFails = 0;
       return out;
     } catch (e: unknown) {
-      const rate = (e as { rate?: boolean })?.rate === true;
+      // timeouts count as rate-limited: a busy sidecar is worth waiting for,
+      // the request itself is cheap to repeat
+      const rate =
+        (e as { rate?: boolean })?.rate === true ||
+        (e instanceof Error && /abort|timeout|terminated/i.test(e.message));
       if (!rate) {
         if (e instanceof Error && e.message === "shape") {
           if (++shapeFails >= 2) {
