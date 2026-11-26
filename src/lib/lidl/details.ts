@@ -2,9 +2,13 @@
 // page HTML. Lidl product pages keep the marketing copy in an
 // article.content-tabs__description element and short highlight/lines in
 // .short-description__description (often <strong>Key</strong>: value pairs).
+// The article may embed <style> blocks (for its feature/dimension tables) and
+// <table> markup — styles are dropped, table rows are folded into the
+// description as "label: value" lines.
 
 export function stripHtml(s: string): string {
   return s
+    .replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&Oslash;/g, "Ø")
     .replace(/&times;/g, "×")
@@ -34,20 +38,50 @@ function firstMatch(html: string, re: RegExp): string | null {
 
 export type ProductDetails = { description?: string; specs?: { k: string; v: string }[] };
 
+// headings that end the intro copy on localised Lidl pages
+const FEATURE_HEADING =
+  /\b(Eigenschaften|Ausstattung|Features|Feature|Caractéristiques|Características|Caratteristiche|Właściwości|Funkcje|Specifikace|Specificații|Technische Daten|Dane techniczne)\b/;
+
 export function parseDetails(html: string): ProductDetails {
   const out: ProductDetails = {};
 
   const short = firstMatch(html, /class="short-description__description"[^>]*>([\s\S]*?)<\/(?:div|section)>/);
-  const primary = firstMatch(html, /<article class="content-tabs__description[^"]*"[^>]*>([\s\S]*?)<\/article>/);
+  const raw = firstMatch(html, /<article class="content-tabs__description[^"]*"[^>]*>([\s\S]*?)<\/article>/);
+  const primary = raw ? raw.replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, " ") : null;
+
   const bullets = primary
     ? [...primary.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => stripHtml(m[1])).filter(Boolean)
     : [];
-  const lead = primary ? stripHtml(primary) : null;
 
-  if (bullets.length > 1) {
-    const intro = lead ? lead.split("Eigenschaften")[0].trim() : "";
-    const body = intro ? `${intro} — ${bullets.join("; ")}` : bullets.join("; ");
-    out.description = body.replace(/\s*;\s*/g, "; ").slice(0, 1200) || undefined;
+  // feature/dimension tables -> "label: value" lines
+  const tableLines: string[] = [];
+  for (const t of primary?.matchAll(/<table\b[\s\S]*?<\/table>/gi) ?? []) {
+    for (const r of t[0].matchAll(/<tr\b[\s\S]*?<\/tr>/gi)) {
+      const cells = [...r[0].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+        .map((m) => stripHtml(m[1]))
+        .filter(Boolean);
+      if (!cells.length) continue;
+      const label = cells[0].replace(/\s*:\s*$/, "");
+      tableLines.push(cells.length === 1 ? label : `${label}: ${cells.slice(1).join(", ")}`);
+    }
+  }
+
+  // body text without tables (added back as structured lines below)
+  const lead = primary ? stripHtml(primary.replace(/<table\b[\s\S]*?<\/table>/gi, " ")) : null;
+
+  const seen = new Set<string>();
+  const dedup = (xs: string[]) =>
+    xs.filter((x) => {
+      const k = x.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
+  if (bullets.length > 1 || tableLines.length) {
+    const intro = lead ? lead.split(FEATURE_HEADING)[0].trim() : "";
+    const parts = dedup([intro, dedup(bullets).join("; "), dedup(tableLines).join("; ")].map((x) => x.trim()).filter(Boolean));
+    out.description = parts.join(" — ").replace(/\s*;\s*/g, "; ").slice(0, 1500) || undefined;
   } else if (short) {
     out.description = stripHtml(short).slice(0, 1200) || undefined;
   } else if (lead) {

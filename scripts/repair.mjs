@@ -37,6 +37,25 @@ console.log(`products without an English title: ${noEn}`);
 if (noEn) await run("scripts/translate.mjs", [Number.isFinite(LIMIT) ? `--limit=${Math.min(noEn, LIMIT)}` : "--limit=0"].filter((x) => !x.endsWith("limit=0")));
 
 console.log("\n=== repair: 3/5 missing manuals, descriptions, specs ===");
+// older crawls stored raw CSS from Lidl's embedded <style> blocks inside the
+// description/specs — reset those rows so the pass below re-fetches them clean
+const POISON = ["width:100%", "td{", "nth-child", "padding-right"];
+const poisonWhere = {
+  OR: POISON.flatMap((f) => [
+    { description: { contains: f } },
+    { descriptionEn: { contains: f } },
+    { specs: { contains: f } },
+    { specsEn: { contains: f } },
+  ]),
+};
+const poisoned = await prisma.product.count({ where: poisonWhere });
+if (poisoned) {
+  console.log(`scrubbing ${poisoned} products with CSS artifacts in description/specs — re-fetched below`);
+  await prisma.product.updateMany({
+    where: poisonWhere,
+    data: { description: null, descriptionEn: null, specs: null, specsEn: null },
+  });
+}
 const noDesc = await prisma.product.count({ where: { description: null } });
 const noManual = await prisma.product.count({ where: { manualCheckedAt: null } });
 console.log(`products without description: ${noDesc}, without manual check: ${noManual}`);
