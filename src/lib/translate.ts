@@ -175,7 +175,11 @@ async function withRetries(
           continue;
         }
         if (attempt >= 2) {
-          warnOnce(`request failed (${e instanceof Error ? e.message : e}) — ${keepOriginal}`);
+          if (wasLibre) {
+            warnOnce(`LibreTranslate request failed (${e instanceof Error ? e.message : e}) — is the libretranslate sidecar running and done loading models?`);
+          } else {
+            warnOnce(`request failed (${e instanceof Error ? e.message : e}) — ${keepOriginal}`);
+          }
           return null;
         }
         if (!wasLibre) endpoint = endpoint >= GOOGLE_LAST ? 0 : endpoint + 1;
@@ -207,7 +211,9 @@ async function withRetries(
       } else {
         endpoint = endpoint + 1;
       }
-      const wait = WAITS[Math.min(attempt, WAITS.length - 1)];
+      // LibreTranslate is self-hosted (no rate limit) — only a tiny pause is
+      // needed before the first attempt on it, unlike the Google backoff
+      const wait = !wasLibre && endpoint === LIBRE_IDX ? 2000 : WAITS[Math.min(attempt, WAITS.length - 1)];
       console.warn(`[translate] rate-limited — trying next endpoint in ${Math.round(wait / 1000)}s.`);
       await sleep(wait);
     }
