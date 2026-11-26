@@ -323,11 +323,15 @@ async function Leaflets({ cc }: { cc: string | null }) {
     orderBy: [{ validFrom: "desc" }, { fetchedAt: "desc" }],
   });
 
-  // PDFs sitting in the country's folder that no leaflet row claims.
-  const inUse = new Set(leaflets.filter((l) => l.pdfStored).map((l) => `${l.flyerId}.pdf`));
+  // Every PDF sitting in the country's folder, with its claimant (if any) —
+  // all of them are selectable when adding or replacing a leaflet's document.
   const dir = path.join(dataDir(), "leaflets", cc);
-  const orphans = fs.existsSync(dir)
-    ? fs.readdirSync(dir).filter((f) => f.endsWith(".pdf") && !inUse.has(f)).sort()
+  const claimByFile = new Map<string, number>(leaflets.filter((l) => l.pdfStored).map((l) => [`${l.flyerId}.pdf`, l.id] as const));
+  const serverPdfs = fs.existsSync(dir)
+    ? fs.readdirSync(dir)
+        .filter((f) => f.endsWith(".pdf"))
+        .sort()
+        .map((f) => ({ name: f, claimedBy: claimByFile.get(f) ?? null, size: fs.statSync(path.join(dir, f)).size }))
     : [];
 
   // Group by the month each leaflet starts in (year → month), newest first —
@@ -343,28 +347,39 @@ async function Leaflets({ cc }: { cc: string | null }) {
     months.get(m)!.push(l);
   }
   const sortedYears = [...years.keys()].sort((a, b) => b - a);
-  const orphanSelect = (label: string) => (
+  const serverPdfSelect = () => (
     <label className="meta">
-      {label}
+      PDFs already on the server
       <select className="input" name="src" style={{ width: "100%" }}>
-        {orphans.map((f) => <option key={f} value={f}>{f}</option>)}
+        <option value="">— choose a PDF on the server —</option>
+        {serverPdfs.map((f) => (
+          <option key={f.name} value={f.name}>
+            {f.name}
+            {f.claimedBy ? ` (in use by #${f.claimedBy} — gets copied)` : " (unclaimed)"}
+            {` · ${(f.size / 1024 / 1024).toFixed(1)} MB`}
+          </option>
+        ))}
       </select>
     </label>
   );
+  const unclaimed = serverPdfs.filter((f) => !f.claimedBy).length;
 
   return (
     <>
       <p style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <Link href="/admin?tab=leaflets" className="button ghost">← All countries</Link>
         <strong>{country?.name ?? cc}</strong>
-        <span className="meta">{leaflets.length} leaflet{leaflets.length === 1 ? "" : "s"}{orphans.length ? ` · ${orphans.length} unclaimed PDF(s) on the server` : ""}</span>
+        <span className="meta">
+          {leaflets.length} leaflet{leaflets.length === 1 ? "" : "s"} · {serverPdfs.length} PDF(s) on the server
+          {unclaimed ? ` (${unclaimed} unclaimed)` : ""}
+        </span>
       </p>
 
       <h2>Add a leaflet</h2>
       <form action={adminCreateLeaflet} className="card" style={{ padding: 16, display: "grid", gap: 10 }}>
         <LeafletFields countryCode={cc} />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
-          {orphans.length ? orphanSelect("…or attach a PDF already on the server instead of uploading") : null}
+          {serverPdfs.length ? serverPdfSelect() : null}
           <label className="meta">…and/or upload a PDF now
             <input className="input" type="file" name="pdf" accept="application/pdf" />
           </label>
@@ -389,7 +404,9 @@ async function Leaflets({ cc }: { cc: string | null }) {
                         {fmtSize(l.sizeBytes)}
                         {l.pdfStored ? (fs.existsSync(path.join(dir, `${l.flyerId}.pdf`)) ? " · PDF on server ✓" : " · PDF MISSING on server") : " · no archived PDF"}
                       </span>
-                      {l.pdfStored ? <a className="meta" href={`/api/leaflets/${l.id}/pdf`} target="_blank">view PDF ↗</a> : null}
+                      {l.pdfStored ? (
+                        <a className="meta" href={`/api/leaflets/${l.id}/pdf?v=${(l.sha256 ?? l.archivedAt?.toISOString() ?? String(l.fetchedAt)).slice(0, 12)}`} target="_blank">view PDF ↗</a>
+                      ) : null}
                     </div>
                     <form action={adminSaveLeaflet} style={{ display: "grid", gap: 10 }}>
                       <input type="hidden" name="id" value={l.id} />
@@ -399,21 +416,26 @@ async function Leaflets({ cc }: { cc: string | null }) {
                         <button className="button ghost" type="submit" formAction={adminDeleteLeaflet} style={{ color: "crimson", borderColor: "crimson" }}>Delete leaflet</button>
                       </div>
                     </form>
-                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end", borderTop: "1px solid var(--border)", paddingTop: 10 }}>
-                      <form action={adminUploadLeafletPdf} style={{ display: "grid", gap: 6 }}>
+                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                      {/* One combined control: upload a file OR pick any PDF
+                          already on the server, then hit the matching button. */}
+                      <form action={adminUploadLeafletPdf} style={{ display: "grid", gap: 8 }}>
                         <input type="hidden" name="id" value={l.id} />
-                        <label className="meta">upload / replace archived PDF
-                          <input className="input" type="file" name="pdf" accept="application/pdf" />
-                        </label>
-                        <button className="button ghost" type="submit">Upload PDF</button>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+                          <label className="meta">archived PDF — upload a file
+                            <input className="input" type="file" name="pdf" accept="application/pdf" />
+                          </label>
+                          {serverPdfs.length ? serverPdfSelect() : null}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button className="button ghost" type="submit">Upload chosen file</button>
+                          {serverPdfs.length ? (
+                            <button className="button ghost" type="submit" formAction={adminAttachServerPdf}>
+                              Use selected server PDF
+                            </button>
+                          ) : null}
+                        </div>
                       </form>
-                      {orphans.length ? (
-                        <form action={adminAttachServerPdf} style={{ display: "grid", gap: 6 }}>
-                          <input type="hidden" name="id" value={l.id} />
-                          {orphanSelect("attach a PDF already on the server")}
-                          <button className="button ghost" type="submit">Attach</button>
-                        </form>
-                      ) : null}
                     </div>
                   </div>
                 ))}

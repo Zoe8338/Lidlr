@@ -44,6 +44,9 @@ type Leaf = {
   pdfStored: boolean;
   viewUrl: string | null;
   pdfUrl: string | null;
+  sha256: string | null;
+  archivedAt: Date | null;
+  fetchedAt: Date;
 };
 
 type MonthBucket = { key: string; year: number; month: number; leaflets: Leaf[] };
@@ -164,7 +167,14 @@ export default async function CountryArchivePage({
                     </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                       {lf.pdfStored ? (
-                        <Link className="button" href={`/api/leaflets/${lf.id}/pdf`} target="_blank">
+                        <Link
+                          className="button"
+                          // content-versioned URL: replacing/attaching the PDF in
+                          // admin changes the version, so browsers immediately
+                          // fetch the new document instead of a cached copy
+                          href={`/api/leaflets/${lf.id}/pdf?v=${(lf.sha256 ?? lf.archivedAt?.toISOString() ?? lf.fetchedAt.toISOString()).slice(0, 12)}`}
+                          target="_blank"
+                        >
                           Archived PDF
                         </Link>
                       ) : (

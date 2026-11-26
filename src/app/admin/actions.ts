@@ -285,7 +285,15 @@ export async function adminAttachServerPdf(formData: FormData) {
     const from = path.join(leafletDir(leaflet.countryCode), src);
     if (!fs.existsSync(from)) throw new Error("That file is no longer on the server");
     const to = leafletPdfPath(leaflet.countryCode, leaflet.flyerId);
-    if (from !== to) fs.renameSync(from, to);
+    // If another leaflet already uses this file, copy it so that one keeps working.
+    const claimedBy = await prisma.leaflet.findFirst({
+      where: { countryCode: leaflet.countryCode, pdfStored: true, flyerId: src.replace(/\.pdf$/, ""), id: { not: id } },
+      select: { id: true },
+    });
+    if (from !== to) {
+      if (claimedBy) fs.copyFileSync(from, to);
+      else fs.renameSync(from, to);
+    }
     const buf = fs.readFileSync(to);
     await prisma.leaflet.update({
       where: { id },

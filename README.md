@@ -285,11 +285,14 @@ so the dashboard stays unlisted). It has four tabs:
 - **Leaflets** — country buttons (like the public archive page), then the
   chosen country's leaflets grouped by year → month. Every field is editable
   (name, title, flyer ID, country, validity dates, cover/PDF/view URLs, pages,
-  size, sha256, archived/fetched timestamps), you can upload/replace the
-  archived PDF directly, attach any unclaimed PDF already sitting in
-  `data/leaflets/<CC>/`, add a brand-new leaflet (with auto-generated flyer ID),
-  or delete one (removes its archived PDF and offers too). Moving a leaflet to
-  another country or flyer ID moves its archived PDF with it.
+  size, sha256, archived/fetched timestamps). Each leaflet has one combined
+  document control: **upload a PDF file or pick any PDF already on the server**
+  (files in use by another leaflet get copied, unclaimed ones get adopted).
+  You can also add a brand-new leaflet (with auto-generated flyer ID) or delete
+  one (removes its archived PDF and offers too). Moving a leaflet to another
+  country or flyer ID moves its archived PDF with it. The public archive's
+  "Archived PDF" button links to a content-versioned URL, so a replaced
+  document shows up immediately instead of coming from the browser cache.
 - **Products** — search by ERP number/title/brand, edit any product field
   (titles, brand, description — original and English), mark a product as
   removed, force an immediate re-translation, clear stored translations so
