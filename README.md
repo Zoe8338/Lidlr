@@ -282,8 +282,14 @@ so the dashboard stays unlisted). It has four tabs:
   and maintenance passes: missing-title translation, manuals + descriptions,
   image archiving, translation double-check (reconcile), offer re-evaluation.
   Jobs run in the background and keep running after you close the page.
-- **Leaflets** — rename leaflets, fix validity dates, or delete one (removes
-  its archived PDF and offers too).
+- **Leaflets** — country buttons (like the public archive page), then the
+  chosen country's leaflets grouped by year → month. Every field is editable
+  (name, title, flyer ID, country, validity dates, cover/PDF/view URLs, pages,
+  size, sha256, archived/fetched timestamps), you can upload/replace the
+  archived PDF directly, attach any unclaimed PDF already sitting in
+  `data/leaflets/<CC>/`, add a brand-new leaflet (with auto-generated flyer ID),
+  or delete one (removes its archived PDF and offers too). Moving a leaflet to
+  another country or flyer ID moves its archived PDF with it.
 - **Products** — search by ERP number/title/brand, edit any product field
   (titles, brand, description, specs — original and English), mark a product
   as removed, force an immediate re-translation, clear stored translations so
