@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { BRANDS, COUNTRIES, inFamily, slugifyBrand, type CountryConfig } from "./catalog.ts";
 import { brandItems, type LidlItem } from "./client.ts";
-import { translateTitles, translationEnabled } from "../translate.ts";
 import { getFxRates, type FxRates } from "../fx.ts";
 
 const prisma = new PrismaClient();
@@ -50,7 +49,7 @@ async function ensureCountries() {
   }
 }
 
-async function upsertItem(item: LidlItem, cc: CountryConfig, translations: Map<string, string | null>): Promise<{ isNew: boolean; priceChanged: boolean }> {
+async function upsertItem(item: LidlItem, cc: CountryConfig): Promise<{ isNew: boolean; priceChanged: boolean }> {
   const brandSlug = slugifyBrand(item.brandName);
   const now = new Date();
 
@@ -63,10 +62,9 @@ async function upsertItem(item: LidlItem, cc: CountryConfig, translations: Map<s
     removed: false,
     ...(item.images?.length ? { images: JSON.stringify(item.images.slice(0, 4)) } : {}),
   };
-  const titleEn =
-    translationEnabled() && !existingProduct?.titleEn
-      ? translations.get(item.title.trim()) ?? null
-      : existingProduct?.titleEn ?? null;
+  // translation is decoupled from crawling: originals are stored here fast,
+  // the title-backfill pass translates them in its own scheduled pass
+  const titleEn = existingProduct?.titleEn ?? null;
 
   await prisma.product.upsert({
     where: { erpNumber: item.erpNumber },
@@ -269,19 +267,8 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
     }
 
     if (countryItems.length) {
-      const erps = countryItems.map((i) => i.erpNumber);
-      const haveEn = new Set<string>();
-      for (let i = 0; i < erps.length; i += 500) {
-        const rows = await prisma.product.findMany({
-          where: { erpNumber: { in: erps.slice(i, i + 500) } },
-          select: { erpNumber: true, titleEn: true },
-        });
-        for (const r of rows) if (r.titleEn) haveEn.add(r.erpNumber);
-      }
-      const pending = countryItems.filter((i) => !haveEn.has(i.erpNumber)).map((i) => i.title);
-      const translations = await translateTitles(pending);
       for (const item of countryItems) {
-        const r = await upsertItem(item, cc, translations);
+        const r = await upsertItem(item, cc);
         if (r.isNew) newItems++;
         if (r.priceChanged) priceChanges++;
       }

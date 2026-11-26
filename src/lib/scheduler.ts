@@ -6,6 +6,7 @@ import { fetchLeaflets, evaluateLeafletOffers } from "./leaflets.ts";
 import { fetchManuals } from "./manuals.ts";
 import { fetchImages } from "./images.ts";
 import { reconcileTranslations } from "./reconcile.ts";
+import { backfillTitles } from "./backfill.ts";
 
 const TICK_MS = 10 * 60 * 1000;
 const CRAWL_HOUR = Number(process.env.CRAWL_HOUR || 2); // local time of each shop
@@ -111,6 +112,7 @@ async function tick() {
     if (crawled) {
       await safe("track-eval", () => evaluateTrackings());
       await safe("notif-delivery", () => deliverPendingNotifications());
+      await safe("title-backfill", () => backfillTitles());
       await safe("manuals+descriptions", () => fetchManuals({ maxPerRun: 150 }));
       await safe("image-archive", () => fetchImages({ maxPerRun: 400 }));
     }
@@ -136,6 +138,7 @@ async function tick() {
       }
       await safe("track-eval", () => evaluateTrackings());
       await safe("notif-delivery", () => deliverPendingNotifications());
+      await safe("title-backfill", () => backfillTitles());
       await safe("leaflets", () => fetchLeaflets());
       await safe("leaflet-offers", () => evaluateLeafletOffers());
       await safe("notif-delivery-2", () => deliverPendingNotifications());
