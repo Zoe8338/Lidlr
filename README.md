@@ -271,14 +271,22 @@ shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FR
 Set `ADMIN_EMAILS="you@example.com"` (comma-separated for more than one) in
 `.env` and rebuild (`sudo docker compose up -d --build`). After signing in with
 a login code sent to one of those addresses you get an **Admin** link in the
-nav and a dashboard at `/admin` where you can:
+nav and a dashboard at `/admin` with four tabs:
 
-- start crawls (all storefronts or one country) and leaflet fetches,
-- run maintenance passes: missing-title translation, manuals + descriptions,
-  image archiving, translation double-check (reconcile), offer re-evaluation,
-- see per-country crawler state (last crawl / last leaflet fetch),
-- rename leaflets, fix validity dates, or delete a leaflet (removes its
-  archived PDF and offers too).
+- **Overview** — catalog stats (products, missing translations, leaflets,
+  users, trackings) and per-country crawler state (last crawl / last leaflet
+  fetch), plus the status of the last background job.
+- **Jobs** — start crawls (all storefronts or one country), leaflet fetches,
+  and maintenance passes: missing-title translation, manuals + descriptions,
+  image archiving, translation double-check (reconcile), offer re-evaluation.
+  Jobs run in the background and keep running after you close the page.
+- **Leaflets** — rename leaflets, fix validity dates, or delete one (removes
+  its archived PDF and offers too).
+- **Products** — search by ERP number/title/brand, edit any product field
+  (titles, brand, description, specs — original and English), mark a product
+  as removed, force an immediate re-translation, clear stored translations so
+  the backfill pass retries them, re-fetch description + manuals from Lidl, or
+  delete the product entirely (FK-safe, like `npm run prune`).
 
 Security notes: admin status is evaluated server-side on every request from
 the `ADMIN_EMAILS` allowlist — nothing is stored in the database or in the
