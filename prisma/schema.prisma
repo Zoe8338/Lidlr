@@ -8,14 +8,17 @@ datasource db {
 }
 
 model Country {
-  code       String    @id
-  name       String
-  host       String
-  locale     String
-  assortment String
-  currency   String
-  enabled    Boolean   @default(true)
-  listings   Listing[]
+  code          String    @id
+  name          String
+  host          String
+  locale        String
+  assortment    String
+  currency      String
+  enabled       Boolean   @default(true)
+  // scheduler state, persisted so container restarts don't re-crawl
+  lastCrawledAt DateTime?
+  lastLeafletAt DateTime?
+  listings      Listing[]
 }
 
 model Product {

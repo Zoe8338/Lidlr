@@ -51,6 +51,34 @@ let lastReconcile = 0;
 let boot = true;
 let busy = false;
 
+// crawl/leaflet state survives restarts (persisted on Country rows) — without
+// this, every container restart used to re-trigger a full boot crawl of all
+// countries, doubling the translation load and starving the sidecar
+async function loadState() {
+  try {
+    const rows = await prisma.country.findMany({
+      select: { code: true, lastCrawledAt: true, lastLeafletAt: true },
+    });
+    for (const r of rows) {
+      if (r.lastCrawledAt) lastCrawl.set(r.code, r.lastCrawledAt.getTime());
+      if (r.lastLeafletAt) lastLeafletFetch.set(r.code, r.lastLeafletAt.getTime());
+    }
+    if (rows.some((r) => r.lastCrawledAt)) console.log(`[scheduler] restored crawl state for ${rows.filter((r) => r.lastCrawledAt).length} countries from the DB`);
+  } catch {
+    // fresh DB — everything is due, boot pass will populate
+  }
+}
+
+const markCrawled = async (code: string, when = new Date()) => {
+  lastCrawl.set(code, when.getTime());
+  await prisma.country.update({ where: { code }, data: { lastCrawledAt: when } }).catch(() => null);
+};
+
+const markLeafletFetched = async (code: string, when = new Date()) => {
+  lastLeafletFetch.set(code, when.getTime());
+  await prisma.country.update({ where: { code }, data: { lastLeafletAt: when } }).catch(() => null);
+};
+
 async function tick() {
   if (busy) return;
   busy = true;
@@ -70,13 +98,13 @@ async function tick() {
     let offersDirty = false;
     for (const cc of due.slice(0, 4)) {
       const ok = await safe(`daily-crawl-${cc.code}`, () => runCrawl({ countries: [cc.code], source: "scheduled-daily" }));
-      if (ok) lastCrawl.set(cc.code, Date.now());
+      if (ok) await markCrawled(cc.code);
       crawled += ok ? 1 : 0;
       // new weekly flyers usually appear at the same cadence as the drops —
       // refresh that country's leaflets right after its crawl (max every 12 h)
       if (ok && Date.now() - (lastLeafletFetch.get(cc.code) ?? 0) > LEAFLET_INTERVAL_MS) {
-        lastLeafletFetch.set(cc.code, Date.now());
-        await safe(`leaflets-${cc.code}`, () => fetchLeaflets({ countries: [cc.code] }));
+        const lfOk = await safe(`leaflets-${cc.code}`, () => fetchLeaflets({ countries: [cc.code] }));
+        if (lfOk) await markLeafletFetched(cc.code);
         offersDirty = true;
       }
     }
@@ -91,11 +119,21 @@ async function tick() {
       await safe("notif-delivery", () => deliverPendingNotifications());
     }
     if (boot) {
-      // one full pass at start so a fresh deployment has everything immediately;
-      // marks every country as crawled so the next ticks don't duplicate it.
+      // catch-up pass at start so a fresh deployment has everything quickly —
+      // but only for countries whose crawl is actually stale, so restarts and
+      // update.sh runs don't re-crawl a fresh catalog
       boot = false;
-      const bootOk = await safe("boot-crawl", () => runCrawl({ source: "scheduled-boot" }));
-      if (bootOk) for (const c of COUNTRIES.filter((c) => c.enabled)) lastCrawl.set(c.code, Date.now());
+      await loadState();
+      const stale = COUNTRIES.filter(
+        (c) => c.enabled && Date.now() - (lastCrawl.get(c.code) ?? 0) > MIN_GAP_MS,
+      );
+      if (stale.length) {
+        console.log(`[scheduler] boot catch-up crawl: ${stale.map((c) => c.code).join(",")}`);
+        const bootOk = await safe("boot-crawl", () => runCrawl({ countries: stale.map((c) => c.code), source: "scheduled-boot" }));
+        if (bootOk) for (const c of stale) await markCrawled(c.code);
+      } else {
+        console.log("[scheduler] boot: crawl state is fresh — no catch-up needed");
+      }
       await safe("track-eval", () => evaluateTrackings());
       await safe("notif-delivery", () => deliverPendingNotifications());
       await safe("leaflets", () => fetchLeaflets());
@@ -104,7 +142,9 @@ async function tick() {
       await safe("manuals+descriptions", () => fetchManuals({ maxPerRun: 150 }));
       await safe("image-archive", () => fetchImages({ maxPerRun: 400 }));
       lastLeaflets = Date.now();
-      for (const c of COUNTRIES.filter((c) => c.enabled)) lastLeafletFetch.set(c.code, Date.now());
+      for (const c of COUNTRIES.filter((c) => c.enabled)) {
+        if (!lastLeafletFetch.get(c.code)) await markLeafletFetched(c.code);
+      }
     }
     // fallback leaflet refresh for anything the per-country path missed
     if (Date.now() - lastLeaflets > LEAFLET_INTERVAL_MS) {
@@ -114,7 +154,7 @@ async function tick() {
       await safe("notif-delivery-3", () => deliverPendingNotifications());
     }
     // translation double-check: every 24 h re-run a rotating batch through the
-    // primary Google endpoints and fix stored values that don't match
+    // provider chain and fix stored values that don't match
     if (Date.now() - lastReconcile > RECONCILE_INTERVAL_MS) {
       lastReconcile = Date.now();
       await safe("reconcile-translations", () => reconcileTranslations());
@@ -131,4 +171,6 @@ export function startScheduler() {
     void tick();
     setInterval(tick, TICK_MS);
   }, 60 * 1000);
+  // restore persisted crawl state before the first tick
+  void loadState();
 }
