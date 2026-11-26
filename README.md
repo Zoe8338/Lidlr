@@ -270,8 +270,10 @@ shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FR
 
 Set `ADMIN_EMAILS="you@example.com"` (comma-separated for more than one) in
 `.env` and rebuild (`sudo docker compose up -d --build`). After signing in with
-a login code sent to one of those addresses you get an **Admin** link in the
-nav and a dashboard at `/admin` with four tabs:
+a login code sent to one of those addresses your **email chip in the header
+becomes the entry point**: click your own email to open the dashboard at
+`/admin` (the chip looks the same and there is no separate "Admin" nav link,
+so the dashboard stays unlisted). It has four tabs:
 
 - **Overview** — catalog stats (products, missing translations, leaflets,
   users, trackings) and per-country crawler state (last crawl / last leaflet

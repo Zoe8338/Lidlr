@@ -61,15 +61,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/new">New items</Link>
               <Link href="/archive">Archive</Link>
               <Link href="/alerts">Tracking</Link>
-              {user && isAdminEmail(user.email) ? <Link href="/admin">Admin</Link> : null}
             </nav>
             <div className="spacer" />
             <ThemeToggle />
             {user ? (
               <div className="userbar">
-                <span className="userchip" title={user.email}>
-                  {user.email}
-                </span>
+                {/* For admins the email chip itself is the way into /admin —
+                    no separate nav link, so the dashboard stays unlisted. */}
+                {isAdminEmail(user.email) ? (
+                  <Link className="userchip" href="/admin" title={`${user.email} — open admin dashboard`}>
+                    {user.email}
+                  </Link>
+                ) : (
+                  <span className="userchip" title={user.email}>
+                    {user.email}
+                  </span>
+                )}
                 <form action={logout}>
                   <button className="button ghost" type="submit">
                     Sign out

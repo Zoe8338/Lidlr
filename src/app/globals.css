@@ -90,6 +90,9 @@ nav.main a:hover { background: var(--surface2); color: var(--text); text-decorat
   border-radius: 999px;
   padding: 6px 12px;
 }
+/* when the chip is a link (admins → /admin), keep it looking like the chip */
+a.userchip { color: var(--muted); text-decoration: none; }
+a.userchip:hover { color: var(--accent); }
 
 .hero { padding: 40px 0 20px; }
 .hero h1 { font-size: 34px; margin: 0 0 10px; line-height: 1.2; }
