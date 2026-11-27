@@ -511,10 +511,17 @@ PDFs live in the `lidlr-data` volume (~5–20 MB per leaflet), so they survive u
 
 Where Lidl publishes structured product data for a flyer, Lidlr also extracts **each individual
 offer** via the same flyer API (`include=products`): title, brand, price, currency and image, and
-links it to your catalog through the offer's ERP number. Offer data availability is decided by
-Lidl per country (currently rich in e.g. DE / FR / NL, empty in others). Tracked products that
-appear in a **current or upcoming** leaflet fire an in-leaflet notification (7-day dedupe, same
-caps), so you know your item is in this week's paper before you walk in.
+links it to your catalog through the offer's ERP number. Where a country's flyers carry **no
+structured products** (e.g. Portugal), Lidlr falls back to extracting offers from each page's
+OCR text: offers whose IAN matches a tracked own-brand product are kept — with the leaflet page
+as their image — while groceries and other brands are dropped, keeping the site own-brands only.
+Tracked products that appear in a **current or upcoming** leaflet fire an in-leaflet notification
+(7-day dedupe, same caps), so you know your item is in this week's paper before you walk in.
+
+The Sales page merges these leaflet offers into **This Week** and **All current** alongside the
+storefront price drops (an offer that duplicates a storefront promo for the same product + country
+collapses into the storefront row, which carries the price history), and **Next Week** lists
+announced offers — all tabs filtered to tracked own-brands.
 
 ## Product manuals
 

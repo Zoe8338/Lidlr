@@ -125,12 +125,95 @@ type FlyerProduct = {
   canonicalUrl?: string;
 };
 
+type FlyerPage = { number?: number; keyWords?: string; image?: string; zoom?: string; thumbnail?: string };
+
+// Some countries (e.g. PT) attach no structured products to their flyers — the
+// only machine-readable offer data is the OCR text of each page (`keyWords`),
+// which contains product titles, "Nº<IAN>" article numbers and prices. Extract
+// the IANs with the words directly in front of them as offer titles; offers
+// whose IAN is not a tracked own-brand product are dropped later, which keeps
+// the site's food/off-brand leak filter intact.
+const OCR_STOP = new Set(
+  ("preços preco euros euro válidos válido promoções promoção artigos artigo salvo erro limitado stock adereços " +
+    "fotos sugestão acumuláveis acumulavel reserva direito quantidade produtos produto adquirir poderão disponíveis " +
+    "lojas loja face qualidade consumidores consumidor preço capa olhe página conclusões efetuadas base estudo " +
+    "realizado ipsos apeme abril saiba mais levar embalagem gramo litro pack unidade unidades grátis disponivel " +
+    "preise gültig angebot angebote artikel nur solange vorrat reicht bilder ohne gewähr sonstige" +
+    " prices valid offer offers articles while stocks last available stores store photo photos")
+    .split(/\s+/)
+    .filter(Boolean),
+);
+
+export function extractOcrOffers(pages: FlyerPage[]): FlyerProduct[] {
+  const out: FlyerProduct[] = [];
+  const seen = new Set<string>();
+  for (const page of pages ?? []) {
+    const text = String(page.keyWords ?? "");
+    if (!text) continue;
+    const words = text.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      const m = words[i].match(/^[Nn][ºo]\s*([0-9]{3,9})$/); // Nº / No marker
+      if (!m) continue;
+      const ian = m[1];
+      if (seen.has(ian)) continue;
+      // title = up to 6 clean words directly before the Nº marker
+      const titleWords: string[] = [];
+      for (let j = i - 1; j >= 0 && titleWords.length < 6; j--) {
+        const w = words[j];
+        if (!/^[A-Za-zÀ-ÿ0-9'&.-]{2,}$/.test(w)) break; // stop at prices (-40€), symbols, sentence gaps
+        if (OCR_STOP.has(w.toLowerCase())) break;
+        titleWords.unshift(w);
+      }
+      if (!titleWords.length) continue;
+      seen.add(ian);
+      out.push({
+        offerKey: `ocr-p${page.number ?? 0}-${ian}`,
+        productId: ian,
+        title: titleWords.join(" "),
+        image: page.zoom || page.image || page.thumbnail || undefined,
+      });
+    }
+  }
+  return out;
+}
+
 async function fetchFlyerProducts(flyerId: string): Promise<FlyerProduct[] | null> {
   const raw = await fetchText(`${FLYER_API}?flyer_identifier=${flyerId}&include=products`);
   if (!raw) return null;
   try {
-    const flyer = (JSON.parse(raw).flyer ?? {}) as { products?: Record<string, FlyerProduct> };
-    return flyer.products ? Object.entries(flyer.products).map(([key, p]) => ({ ...p, offerKey: key } as FlyerProduct)) : [];
+    const flyer = (JSON.parse(raw).flyer ?? {}) as {
+      products?: Record<string, FlyerProduct> | FlyerProduct[];
+      pages?: FlyerPage[];
+    };
+    let products: FlyerProduct[] = [];
+    if (flyer.products) {
+      products = Array.isArray(flyer.products)
+        ? flyer.products
+        : Object.entries(flyer.products).map(([key, p]) => ({ ...p, offerKey: key } as FlyerProduct));
+    }
+    if (!products.length && Array.isArray(flyer.pages)) {
+      // no structured products (PT and others) — synthesize offers from page OCR
+      products = extractOcrOffers(flyer.pages);
+    }
+    if (!products.length) return products;
+    // OCR offers carry a raw IAN as productId: resolve it to a tracked product's
+    // ERP so notifications and the deals page link correctly (unknown IANs =
+    // untracked items, typically food — dropped, matching the crawl filter).
+    const needsResolve = products.some((p) => p.offerKey?.startsWith("ocr-"));
+    if (needsResolve) {
+      const catalog = await prisma.product.findMany({ where: { ians: { not: null } }, select: { erpNumber: true, ians: true } });
+      const byIan = new Map<string, string>();
+      for (const row of catalog) {
+        try {
+          for (const i of JSON.parse(row.ians || "[]") as string[]) if (!byIan.has(i)) byIan.set(i, row.erpNumber);
+        } catch {}
+      }
+      products = products.filter((p) => !p.offerKey?.startsWith("ocr-") || (p.productId && byIan.has(p.productId)));
+      for (const p of products) {
+        if (p.offerKey?.startsWith("ocr-") && p.productId) p.productId = byIan.get(p.productId) ?? p.productId;
+      }
+    }
+    return products;
   } catch {
     return null;
   }
@@ -260,7 +343,8 @@ export async function fetchLeaflets(
         const coverUrl = meta?.thumbnailUrl ? String(meta.thumbnailUrl) : card.coverUrl;
         const pdfUrl = meta?.pdfUrl ? String(meta.pdfUrl) : null;
         const viewUrl = meta?.flyerUrlAbsolute ? String(meta.flyerUrlAbsolute) : null;
-        const pages = typeof meta?.pages === "number" ? meta.pages : null;
+        // the flyer API returns pages either as a count or as an array of page objects
+        const pages = Array.isArray(meta?.pages) ? meta.pages.length : typeof meta?.pages === "number" ? meta.pages : null;
 
         const spanDays =
           validFrom && validUntil && !isNaN(validFrom.getTime()) && !isNaN(validUntil.getTime())

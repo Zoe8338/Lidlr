@@ -105,8 +105,18 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
         };
       }),
     );
-    if (brandSlugs) all = all.filter((o) => o.erpNumber || brandMatch(o.brand, brandSlugs));
-    all = filterOffers(all, q, price, country);
+    // own-brands only: keep offers whose ERP is a tracked product or whose
+    // brand name matches a tracked brand (filters out other-brand and grocery
+    // items that Lidl mixes into its flyers)
+    const offerErps = [...new Set(all.map((o) => o.erpNumber).filter(Boolean))] as string[];
+    const known = new Set(
+      offerErps.length
+        ? (await prisma.product.findMany({ where: { erpNumber: { in: offerErps } }, select: { erpNumber: true } })).map((p) => p.erpNumber)
+        : [],
+    );
+    let filtered = all.filter((o) => (o.erpNumber ? known.has(o.erpNumber) : BRANDS.some((b) => b.queries.some((qr) => o.brand.toUpperCase().includes(qr.toUpperCase())))));
+    if (brandSlugs) filtered = filtered.filter((o) => o.erpNumber || brandMatch(o.brand, brandSlugs));
+    all = filterOffers(filtered, q, price, country);
     deals = all;
   } else {
     const all = await prisma.listing.findMany({
@@ -145,6 +155,73 @@ export default async function Deals({ searchParams }: { searchParams: Promise<Sp
       .filter((d) =>
         offer === "yes" ? d.promo != null || d.eurWas != null : offer === "no" ? d.promo == null && d.eurWas == null : true,
       )
+      .filter((d) => (online === "yes" ? d.online === true : online === "no" ? d.online === false : true))
+      .filter((d) => (q ? `(erp:${d.erpNumber}) ${d.title} ${d.brand}`.toLowerCase().includes(q.toLowerCase()) : true));
+    if (price?.min != null) deals = deals.filter((d) => d.price != null && d.price >= price.min!);
+    if (price?.max != null) deals = deals.filter((d) => d.price != null && d.price <= price.max!);
+
+    // --- merge in leaflet offers -------------------------------------------
+    // The storefront promos above only cover products sold in the online shop.
+    // The weekly leaflets carry the full in-store sale — merge their offers
+    // (own-brands only) so This Week / All current show everything.
+    const now = new Date();
+    const weekEnd = new Date(thisWeekStart.getTime() + 7 * 86400000);
+    const leaflets = await prisma.leaflet.findMany({
+      where:
+        week === "this"
+          ? { validFrom: { lt: weekEnd }, OR: [{ validUntil: { gte: thisWeekStart } }, { validUntil: null }] }
+          : { OR: [{ validUntil: { gte: now } }, { validUntil: null }] },
+      include: { offers: true },
+      orderBy: { validFrom: "asc" },
+    });
+    // resolve offer ERPs to catalog products so we can apply the own-brand filter
+    const offerErps = [...new Set(leaflets.flatMap((lf) => lf.offers.map((o) => o.erpNumber).filter(Boolean)))].map(String);
+    const offerProducts = offerErps.length
+      ? await prisma.product.findMany({
+          where: { erpNumber: { in: offerErps } },
+          select: { erpNumber: true, brandSlug: true, brandName: true, title: true, titleEn: true, imageUrl: true, images: true, storedImages: true },
+        })
+      : [];
+    const productByErp = new Map(offerProducts.map((p) => [p.erpNumber, p]));
+    const ownBrandOk = (o: (typeof leaflets)[number]["offers"][number]) => {
+      if (o.erpNumber) return productByErp.has(o.erpNumber); // catalog = own-brands only
+      return BRANDS.some((b) =>
+        b.queries.some((qr) => (o.brand || "").toUpperCase().includes(qr.toUpperCase())),
+      );
+    };
+    // a leaflet offer that duplicates a storefront promo (same ERP + country) is dropped
+    const storeKeys = new Set(deals.filter((d) => d.erpNumber).map((d) => `${d.erpNumber}:${d.countryCode}`));
+    const leafletDeals: Deal[] = leaflets.flatMap((lf) =>
+      lf.offers
+        .filter((o) => o.erpNumber ? !storeKeys.has(`${o.erpNumber}:${lf.countryCode}`) : true)
+        .filter(ownBrandOk)
+        .map((o) => {
+          const eur = o.price != null ? (fx && o.currency && o.currency !== "EUR" ? convert(o.price, o.currency, "EUR", fx) : o.price) : null;
+          const p = o.erpNumber ? productByErp.get(o.erpNumber) : undefined;
+          return {
+            key: o.offerKey,
+            erpNumber: o.erpNumber,
+            title: o.title,
+            brand: o.brand || p?.brandName || p?.brandSlug || "",
+            imageUrl: o.imageUrl ?? p?.imageUrl ?? null,
+            imageSrcs: p ? productImageSrcs(p) : o.imageUrl ? [`/api/img?u=${encodeURIComponent(o.imageUrl)}`] : undefined,
+            url: o.url ?? (lf.viewUrl ?? null),
+            countryCode: lf.countryCode,
+            price: eur,
+            local: o.price != null && o.currency && o.currency !== "EUR" ? fmtLocal(o.price, o.currency) : null,
+            eurWas: null,
+            discount: null,
+            promo: lf.name,
+            online: null,
+            date: lf.validFrom ?? lf.fetchedAt,
+            valid: [lf.validFrom, lf.validUntil].every(Boolean)
+              ? `${fmtDate(lf.validFrom!)} – ${fmtDate(lf.validUntil!)}`
+              : null,
+          } as Deal;
+        }),
+    );
+    deals = [...deals, ...leafletDeals]
+      .filter((d) => (offer === "yes" ? d.promo != null || d.eurWas != null : offer === "no" ? d.promo == null && d.eurWas == null : true))
       .filter((d) => (online === "yes" ? d.online === true : online === "no" ? d.online === false : true))
       .filter((d) => (q ? `(erp:${d.erpNumber}) ${d.title} ${d.brand}`.toLowerCase().includes(q.toLowerCase()) : true));
     if (price?.min != null) deals = deals.filter((d) => d.price != null && d.price >= price.min!);
