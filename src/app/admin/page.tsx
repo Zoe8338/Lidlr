@@ -27,6 +27,8 @@ import {
   adminSaveProduct,
   adminSaveSpecs,
 } from "./productActions";
+import { adminImportParkPrice, adminMergeProducts, adminMergeSuggestion } from "./mergeActions";
+import { findMergeSuggestions } from "@/lib/merge";
 import { ToastStack, type ToastItem } from "@/components/Toast";
 
 export const dynamic = "force-dynamic";
@@ -208,9 +210,14 @@ function Jobs() {
         <span className="meta">
           Match ParkPrice&apos;s English titles, images and manual links onto crawled products
           (via IAN numbers, so run a crawl first). Polite: 3 s between requests, resumes from
-          cached progress. Limit = pages to process this run.
+          cached progress. Limit = pages to process this run. For specific products only,
+          use the targeted import on the Products tab.
         </span>
         {limitInput("limit (default 300)")}
+        <label className="check">
+          <input type="checkbox" name="createMissing" />
+          create missing products (shells keyed <code>IAN-&lt;ian&gt;</code>)
+        </label>
         <button className="button" type="submit">Start ParkPrice import</button>
       </form>
     </div>
@@ -492,6 +499,85 @@ function InfoTableEditor({ erp, specsRaw }: { erp: string; specsRaw: string | nu
   );
 }
 
+// ---- Products tab: ParkPrice import + merge panels --------------------------
+
+async function MergeSuggestions() {
+  const suggestions = await findMergeSuggestions(10);
+  if (!suggestions.length) {
+    return (
+      <div className="meta" style={{ marginTop: 12 }}>
+        No duplicate candidates right now. Suggestions appear here automatically when two
+        products share an IAN number or the same title words — e.g. a crawled product vs an
+        IAN-keyed shell created by the ParkPrice import.
+      </div>
+    );
+  }
+  const erps = [...new Set(suggestions.flatMap((s) => [s.keep, s.drop]))];
+  const rows = await prisma.product.findMany({
+    where: { erpNumber: { in: erps } },
+    select: {
+      erpNumber: true,
+      title: true,
+      titleEn: true,
+      brandName: true,
+      ians: true,
+      removed: true,
+      firstSeen: true,
+      _count: { select: { listings: true, manuals: true, trackings: true, snapshots: true } },
+    },
+  });
+  const byErp = new Map(rows.map((p) => [p.erpNumber, p]));
+  return (
+    <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+      {suggestions.map((s, i) => {
+        const a = byErp.get(s.keep);
+        const b = byErp.get(s.drop);
+        if (!a || !b) return null;
+        const mini = (p: NonNullable<typeof a>) => (
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+              <strong>{p.erpNumber}</strong>
+              {p.erpNumber.startsWith("IAN-") ? <span className="meta">(ParkPrice shell)</span> : null}
+              {p.removed ? <span className="meta">(removed)</span> : null}
+            </div>
+            <div>{p.titleEn || p.title}</div>
+            {p.titleEn && p.title !== p.titleEn ? <div className="meta">{p.title}</div> : null}
+            <div className="meta">
+              {p.brandName ?? "no brand"} · {p._count.listings} listing{p._count.listings === 1 ? "" : "s"} ·{" "}
+              {p._count.snapshots} snapshot{p._count.snapshots === 1 ? "" : "s"} · {p._count.manuals} manual
+              {p._count.manuals === 1 ? "" : "s"} · {p._count.trackings} tracking{p._count.trackings === 1 ? "" : "s"}
+            </div>
+            <div className="meta">IANs: {p.ians ? p.ians : "—"}</div>
+            <div className="meta">first seen {fmtDate(p.firstSeen)}</div>
+          </div>
+        );
+        return (
+          <form key={`${s.keep}|${s.drop}`} action={adminMergeSuggestion} className="card" style={{ padding: 14 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {mini(a)}
+              {mini(b)}
+            </div>
+            <div className="meta" style={{ marginTop: 6 }}>
+              Why: {s.reasons.join(" + ")}
+            </div>
+            <input type="hidden" name="erpA" value={s.keep} />
+            <input type="hidden" name="erpB" value={s.drop} />
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+              <label className="check">
+                <input type="radio" name="keep" value="a" defaultChecked /> keep {s.keep}
+              </label>
+              <label className="check">
+                <input type="radio" name="keep" value="b" /> keep {s.drop}
+              </label>
+              <button className="button" type="submit">Merge these duplicates</button>
+            </div>
+          </form>
+        );
+      })}
+    </div>
+  );
+}
+
 async function Products({ q }: { q: string }) {
   const results = q
     ? await prisma.product.findMany({
@@ -515,6 +601,53 @@ async function Products({ q }: { q: string }) {
         <button className="button" type="submit">Search</button>
       </form>
       {q && results.length === 0 ? <div className="empty">No products match &ldquo;{q}&rdquo;.</div> : null}
+
+      <details className="card" style={{ padding: 14, marginTop: 16 }} open={!q}>
+        <summary><strong>Import from ParkPrice (specific products)</strong></summary>
+        <form action={adminImportParkPrice} style={{ display: "grid", gap: 10, marginTop: 10 }}>
+          <span className="meta">
+            Paste ParkPrice product URLs, URL slugs or IAN numbers — one per line, max 25.
+            Matched products get ParkPrice&apos;s English title, image and manual links
+            (fields that are still empty). Run a crawl first so crawled products carry IANs.
+          </span>
+          <textarea
+            className="input"
+            name="targets"
+            rows={4}
+            placeholder={"521608\nhttps://www.park-price.com/en/product/…"}
+            style={{ width: "100%" }}
+          />
+          <label className="check">
+            <input type="checkbox" name="createMissing" />
+            create missing products (shell keyed <code>IAN-&lt;ian&gt;</code> with English title,
+            image and manuals — merge it with the real product later if one turns up)
+          </label>
+          <label className="check">
+            <input type="checkbox" name="dryRun" /> dry run (report what would happen, write nothing)
+          </label>
+          <div>
+            <button className="button" type="submit">Import these</button>
+          </div>
+        </form>
+      </details>
+
+      <details className="card" style={{ padding: 14, marginTop: 12 }} open={!q}>
+        <summary><strong>Merge duplicate products</strong></summary>
+        <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+          <form action={adminMergeProducts} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input className="input" name="keep" placeholder="keep ERP…" style={{ width: 180 }} />
+            <input className="input" name="drop" placeholder="merge (delete) ERP…" style={{ width: 180 }} />
+            <button className="button" type="submit">Merge</button>
+          </form>
+          <span className="meta">
+            Merging moves all listings, snapshots, trackings, notifications, manuals and
+            leaflet offers onto the kept product, fills its empty fields from the other,
+            and deletes the duplicate.
+          </span>
+          <strong style={{ marginTop: 4 }}>Suggested duplicates</strong>
+          <MergeSuggestions />
+        </div>
+      </details>
       <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
         {results.map((p) => (
           <div key={p.erpNumber} className="card" style={{ padding: 16 }}>

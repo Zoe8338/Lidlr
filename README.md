@@ -250,6 +250,10 @@ docker compose exec lidlr npm run parkprice -- --max=500
 npm run parkprice -- --dry-run
 npm run parkprice -- --probe=20
 npm run parkprice
+
+# targeted: import specific pages only (URLs, slugs or IANs), optionally
+# creating shell products for IANs not yet in the catalog
+npm run parkprice -- --targets=521608,https://www.park-price.com/en/product/... --create-missing
 ```
 
 Quick database stats (product/listing counts) from the host:
@@ -262,7 +266,11 @@ Progress is stored in `data/parkprice-progress.json`, so an interrupted run
 resumes where it stopped. Re-run after new crawls to pick up newly matched IANs
 (and their manuals). The same import can be started from the admin dashboard:
 **/admin → Jobs → Import from ParkPrice** (background job with live log tail;
-products it matches need their IANs, so run a crawl first).
+products it matches need their IANs, so run a crawl first), and the Products
+tab has a **targeted import** for specific URLs/IANs with an optional
+**create-missing** mode: pages whose IAN matches nothing become shell products
+keyed `IAN-<ian>` (English title, image, manuals), which later surface as
+**merge suggestions** if a crawl finds the real ERP product.
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
 shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `RESEND_API_KEY`, `SITE_URL`,
@@ -305,7 +313,15 @@ so the dashboard stays unlisted). It has six tabs:
   delete the product entirely (FK-safe, like `npm run prune`). Each product
   also has an **info-table editor**: add or remove label/value rows (the
   spec list shown next to the description on the product page), up to three
-  new rows per save.
+  new rows per save. The Products tab additionally has **targeted ParkPrice
+  import** (paste ParkPrice URLs/slugs/IANs, optionally creating shell
+  products for items the crawler never found) and **merge duplicates**:
+  suggested pairs (same IAN or same title words — e.g. a crawled product vs
+  an IAN-keyed shell) are shown side by side with listings/snapshot/manual
+  counts and a one-click merge; you can also merge any two ERP numbers
+  manually. Merging moves listings, snapshots, trackings, notifications,
+  manuals and leaflet offers onto the kept product, fills empty fields from
+  the other, unions the IAN/image lists, and deletes the duplicate.
 - **Media** — browse every stored file on the server: product images, leaflet
   PDFs and manuals (counts + total GB per kind), 50 per page, each showing
   which product/leaflet uses it. Files nothing claims are flagged red and can

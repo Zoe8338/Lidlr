@@ -118,11 +118,13 @@ export async function adminRunJob(formData: FormData) {
       );
       break;
     case "parkprice": {
+      const createMissing = formData.get("createMissing") === "on";
       void runJob("ParkPrice import", async () => {
         const { importParkPrice } = await import("@/lib/parkprice");
         const lines: string[] = [];
         const summary = await importParkPrice({
           max: max ?? 300,
+          createMissing,
           log: (line) => {
             lines.push(line);
             if (lines.length > 40) lines.shift();

@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "./db.ts";
+import { BRANDS } from "./lidl/catalog.ts";
 
 export type ParkPriceSummary = {
   urls: number;
@@ -18,7 +19,9 @@ export type ParkPriceSummary = {
   cached: number;
   matched: number;
   updated: number;
+  created: number;
   notInCatalog: number;
+  notFound: number;
   failed: number;
   manualsAdded: number;
   dryRun: boolean;
@@ -112,13 +115,37 @@ function parseProduct(html: string): { ian: string | null; title: string | null;
   return { ian, title, img, manuals };
 }
 
+// Best-effort brand inference from a ParkPrice English title.
+function inferBrand(title: string | null): { brandName: string; brandSlug: string } | null {
+  if (!title) return null;
+  const up = ` ${title.toUpperCase()} `;
+  for (const b of BRANDS) {
+    const hit = b.queries.find((q) => up.includes(` ${q.toUpperCase()} `) || up.includes(` ${q.toUpperCase()}`));
+    if (hit) return { brandName: hit, brandSlug: b.slug };
+  }
+  return null;
+}
+
 export async function importParkPrice(
-  opts: { max?: number; offset?: number; delay?: number; refetch?: boolean; dryRun?: boolean; log?: (s: string) => void } = {},
+  opts: {
+    max?: number;
+    offset?: number;
+    delay?: number;
+    refetch?: boolean;
+    dryRun?: boolean;
+    /** park-price product URLs, URL slugs, or IAN numbers — import only these */
+    targets?: string[];
+    /** create shell products (erpNumber "IAN-<ian>") for pages with no catalog match */
+    createMissing?: boolean;
+    log?: (s: string) => void;
+  } = {},
 ): Promise<ParkPriceSummary> {
   const max = opts.max ?? 1e9;
   const offset = opts.offset ?? 0;
   const delay = opts.delay ?? DEFAULT_DELAY;
   const dryRun = !!opts.dryRun;
+  const createMissing = !!opts.createMissing;
+  const targets = (opts.targets ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 50);
   const log = opts.log ?? ((s: string) => console.log(s));
   const state = loadState();
   const persist = () => saveState(state);
@@ -134,14 +161,51 @@ export async function importParkPrice(
 
   let urls = await productUrls(delay, log);
   log(`park-price sitemap: ${urls.length} product pages`);
-  urls = urls.slice(offset).slice(0, Number.isFinite(max) ? max : undefined);
-  log(`processing ${urls.length} pages (offset ${offset}, delay ${delay} ms, ${dryRun ? "DRY RUN" : "writing"})`);
 
-  const summary: ParkPriceSummary = { urls: urls.length, fetched: 0, cached: 0, matched: 0, updated: 0, notInCatalog: 0, failed: 0, manualsAdded: 0, dryRun };
+  if (targets.length) {
+    // targeted mode: pick just the requested pages. Targets may be full URLs,
+    // URL slugs, or IAN numbers (ParkPrice slugs end in "-<IAN>/<internal-id>").
+    const norm = (u: string) => u.replace(/\/$/, "").toLowerCase();
+    const matchedUrls = new Set<string>();
+    for (const t of targets) {
+      const isUrl = /^https?:\/\//i.test(t);
+      const needle = t.toLowerCase().replace(/\/$/, "");
+      // boundary-guarded so IAN 521608 cannot match slug ...-1521608-...
+      const re = new RegExp(`(^|[^0-9a-z])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^0-9a-z])`);
+      const hit = urls.find((u) => {
+        const nu = norm(u);
+        return isUrl ? nu === needle || nu.includes(needle) : re.test(nu);
+      });
+      if (hit) matchedUrls.add(hit);
+      else log(`target not found in sitemap: ${t}`);
+    }
+    urls = [...matchedUrls];
+  }
+  urls = urls.slice(offset).slice(0, Number.isFinite(max) ? max : undefined);
+  log(
+    `processing ${urls.length} pages (${targets.length ? "targeted" : `offset ${offset}`}, delay ${delay} ms, ${
+      dryRun ? "DRY RUN" : "writing"
+    }${createMissing ? ", create-missing ON" : ""})`,
+  );
+
+  const summary: ParkPriceSummary = {
+    urls: urls.length,
+    fetched: 0,
+    cached: 0,
+    matched: 0,
+    updated: 0,
+    created: 0,
+    notInCatalog: 0,
+    notFound: targets.length - urls.length,
+    failed: 0,
+    manualsAdded: 0,
+    dryRun,
+  };
 
   for (const url of urls) {
     const key = url.replace(/^https?:\/\/www\.park-price\.com\/en\/product\//, "").split("/")[0];
-    if (state[key] && !opts.refetch) {
+    // targeted imports always re-fetch (the admin explicitly asked for these pages)
+    if (state[key] && !opts.refetch && !targets.length) {
       summary.cached++;
       continue;
     }
@@ -155,8 +219,35 @@ export async function importParkPrice(
     summary.fetched++;
     const { ian, title, img, manuals } = parseProduct(html);
 
-    const erp = ian ? byIan.get(ian) : null;
-    if (!erp) {
+    const matchedErp = ian ? byIan.get(ian) ?? null : null;
+    let targetErp: string | null = matchedErp;
+    if (!matchedErp && createMissing && ian && !dryRun) {
+      // No catalog match: create a shell product keyed by the IAN ("IAN-<ian>").
+      // It carries the English title/image/manuals now; if a later crawl finds
+      // the real ERP product, both carry the same IAN and surface as a merge
+      // suggestion in the admin Products tab.
+      const shellErp = `IAN-${ian}`;
+      const englishTitle = (title || "").trim();
+      const existing = await prisma.product.findUnique({ where: { erpNumber: shellErp }, select: { erpNumber: true } });
+      if (!existing) {
+        const brand = inferBrand(englishTitle);
+        await prisma.product.create({
+          data: {
+            erpNumber: shellErp,
+            title: englishTitle || shellErp,
+            titleEn: englishTitle ? englishTitle : null,
+            imageUrl: img,
+            ians: JSON.stringify([ian]),
+            brandName: brand?.brandName ?? null,
+            brandSlug: brand?.brandSlug ?? null,
+          },
+        });
+        summary.created++;
+        log(`created shell product ${shellErp} (${englishTitle || "no title"})`);
+      }
+      targetErp = shellErp;
+    }
+    if (!targetErp) {
       summary.notInCatalog++;
       // never cache pages during a probe/dry-run, so a later real run retries them
       if (!dryRun) {
@@ -167,34 +258,34 @@ export async function importParkPrice(
     }
 
     const changes: Record<string, string> = {};
-    const p = await prisma.product.findUnique({ where: { erpNumber: erp }, select: { title: true, titleEn: true, imageUrl: true } });
+    const p = await prisma.product.findUnique({ where: { erpNumber: targetErp }, select: { title: true, titleEn: true, imageUrl: true } });
     const englishTitle = (title || "").trim();
     if (englishTitle && !p?.titleEn) changes.titleEn = englishTitle;
     if (englishTitle && !p?.title) changes.title = englishTitle;
     if (img && !p?.imageUrl) changes.imageUrl = img;
     if (Object.keys(changes).length && !dryRun) {
-      await prisma.product.update({ where: { erpNumber: erp }, data: changes });
+      await prisma.product.update({ where: { erpNumber: targetErp }, data: changes });
       summary.updated++;
     }
     for (const mUrl of manuals) {
       if (dryRun) continue;
       await prisma.manual.upsert({
-        where: { erpNumber_url: { erpNumber: erp, url: mUrl } },
+        where: { erpNumber_url: { erpNumber: targetErp, url: mUrl } },
         update: {},
-        create: { erpNumber: erp, url: mUrl, title: "Instruction manual", language: null },
+        create: { erpNumber: targetErp, url: mUrl, title: "Instruction manual", language: null },
       });
       summary.manualsAdded++;
     }
     summary.matched++;
     if (!dryRun) {
-      state[key] = { ian, title, erp, manuals, updated: Object.keys(changes).length, at: new Date().toISOString() };
+      state[key] = { ian, title, erp: targetErp, manuals, updated: Object.keys(changes).length, at: new Date().toISOString() };
       if (summary.fetched % 10 === 0) persist();
     }
   }
   persist();
 
   log(
-    `Done. fetched=${summary.fetched} cached=${summary.cached} matched=${summary.matched} notInCatalog=${summary.notInCatalog} httpFailed=${summary.failed}` +
+    `Done. fetched=${summary.fetched} cached=${summary.cached} matched=${summary.matched} created=${summary.created} notInCatalog=${summary.notInCatalog} httpFailed=${summary.failed}` +
       ` | products updated: ${dryRun ? "(dry-run — nothing written)" : summary.updated} | manuals added: ${dryRun ? "(dry-run)" : summary.manualsAdded}`,
   );
   return summary;
