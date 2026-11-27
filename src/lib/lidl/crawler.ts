@@ -19,7 +19,12 @@ export type CrawlSummary = {
   priceChanges: number;
   errors: number;
   items: number;
+  truncated?: number;
 };
+
+// per-brand/keyword cap; large storefronts (DE/UK) can return >1000 items for
+// a single brand keyword, so this must stay comfortably above numFound
+const MAX_PER_BRAND = Number(process.env.CRAWL_MAX_PER_BRAND || 3000);
 
 const DELAY_MS = Number(process.env.CRAWL_DELAY_MS || 400);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -239,6 +244,7 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
   let priceChanges = 0;
   let errors = 0;
   let items = 0;
+  let truncated = 0;
 
   const countriesToCrawl = COUNTRIES.filter((c) => c.enabled && (!opts.countries || opts.countries.map((x) => x.toUpperCase()).includes(c.code)));
   const brandsToCrawl = BRANDS.filter((b) => !opts.brands || opts.brands.includes(b.slug));
@@ -249,10 +255,15 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
     const countryItems: LidlItem[] = [];
     for (const brand of brandsToCrawl) {
       try {
-        const maxItems = opts.maxItemsPerBrand ?? 1000;
+        const maxItems = opts.maxItemsPerBrand ?? MAX_PER_BRAND;
         const lists = await Promise.all(brand.queries.map((q) => brandItems(cc, q, maxItems)));
+        // surface any query that hit the cap — the storefront had more items
+        // than we collected, i.e. the crawl was truncated
         for (const list of lists) {
-          for (const item of list) {
+          if (list.numFound > list.items.length) truncated++;
+        }
+        for (const list of lists) {
+          for (const item of list.items) {
             if (!inFamily(brand.family, item.brandName, item.title)) continue;
             const key = `${cc.code}:${item.erpNumber}`;
             if (seen.has(key)) continue;
@@ -279,8 +290,15 @@ export async function runCrawl(opts: CrawlOptions = {}): Promise<CrawlSummary> {
 
   await prisma.crawlRun.update({
     where: { id: run.id },
-    data: { finishedAt: new Date(), countries, newItems, priceChanges, errors, notes: `${items} listings scraped` },
+    data: {
+      finishedAt: new Date(),
+      countries,
+      newItems,
+      priceChanges,
+      errors,
+      notes: `${items} listings scraped${truncated ? ` · ${truncated} queries truncated (raise CRAWL_MAX_PER_BRAND)` : ""}`,
+    },
   });
 
-  return { runId: run.id, countries, newItems, priceChanges, errors, items };
+  return truncated ? { runId: run.id, countries, newItems, priceChanges, errors, items, truncated } : { runId: run.id, countries, newItems, priceChanges, errors, items };
 }

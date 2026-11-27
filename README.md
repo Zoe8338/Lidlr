@@ -231,7 +231,7 @@ nothing breaks. Models persist in the `lt-models` volume.
 `npm run parkprice` walks park-price.com's sitemaps (politely: single-threaded,
 3 s between requests, resumable) and imports **product metadata only** — English
 titles, IAN article numbers, images. Any PDF manuals linked on a matched
-ParkPrice page (`btnOpenPDF` anchors) are imported as manual records — they link
+ParkPrice page (any PDF link) are imported as manual records — they link
 to Lidl's own media host (Official link only; archived copies are made by our
 own fetcher). Lidl IANs map ParkPrice pages to our ERP numbers, so an exact
 match is only recorded when the IAN is known (crawls fill `Product.ians`);
@@ -260,7 +260,9 @@ docker compose exec lidlr node -e "const{PrismaClient}=require('@prisma/client')
 
 Progress is stored in `data/parkprice-progress.json`, so an interrupted run
 resumes where it stopped. Re-run after new crawls to pick up newly matched IANs
-(and their manuals).
+(and their manuals). The same import can be started from the admin dashboard:
+**/admin → Jobs → Import from ParkPrice** (background job with live log tail;
+products it matches need their IANs, so run a crawl first).
 
 Optional env vars (put them in a `.env` next to `docker-compose.yml`, plain
 shell file format): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `RESEND_API_KEY`, `SITE_URL`,
@@ -273,14 +275,17 @@ Set `ADMIN_EMAILS="you@example.com"` (comma-separated for more than one) in
 a login code sent to one of those addresses your **email chip in the header
 becomes the entry point**: click your own email to open the dashboard at
 `/admin` (the chip looks the same and there is no separate "Admin" nav link,
-so the dashboard stays unlisted). It has four tabs:
+so the dashboard stays unlisted). It has six tabs:
 
 - **Overview** — catalog stats (products, missing translations, leaflets,
   users, trackings) and per-country crawler state (last crawl / last leaflet
   fetch), plus the status of the last background job.
 - **Jobs** — start crawls (all storefronts or one country), leaflet fetches,
   and maintenance passes: missing-title translation, manuals + descriptions,
-  image archiving, translation double-check (reconcile), offer re-evaluation.
+  image archiving, translation double-check (reconcile), offer re-evaluation,
+  and **Import from ParkPrice** (walks park-price.com politely, matches its
+  pages to our products via Lidl IAN, fills English titles/images and imports
+  manual PDFs — resumable, default 300 pages per run, custom limit allowed).
   Jobs run in the background and keep running after you close the page.
 - **Leaflets** — country buttons (like the public archive page), then the
   chosen country's leaflets grouped by year → month. Every field is editable
@@ -301,6 +306,12 @@ so the dashboard stays unlisted). It has four tabs:
   also has an **info-table editor**: add or remove label/value rows (the
   spec list shown next to the description on the product page), up to three
   new rows per save.
+- **Media** — browse every stored file on the server: product images, leaflet
+  PDFs and manuals (counts + total GB per kind), 50 per page, each showing
+  which product/leaflet uses it. Files nothing claims are flagged red and can
+  be deleted right there — the database is kept in sync (a deleted leaflet PDF
+  is marked not-stored, a deleted manual loses its archived copy, empty
+  product folders are cleaned up).
 
 The public product page shows the **English description only** — the
 original-language text appears only as a fallback while no English version
@@ -464,12 +475,14 @@ snapshots them into an **archive**:
 
 - Discovery uses Lidl's public leaflet widget API (`esi.leaflets.schwarz/overview`) + flyer JSON API
   (`endpoints.leaflets.schwarz/v4/flyer`) — the same public endpoints the country sites themselves use.
-- For every leaflet it stores **name, validity dates, page count, cover image and viewer URL**; with
-  `ARCHIVE_LEAFLET_PDF=1` (default) it also **downloads the PDF into `data/leaflets/<CC>/`** (sha256-deduped,
+- With `ARCHIVE_LEAFLET_PDF=1` (default) it also **downloads the PDF into `data/leaflets/<CC>/`** (sha256-deduped,
   so unchanged or regional-duplicate files are stored once). PDFs are served from your server at
   `/api/leaflets/<id>/pdf`, so archived flyers remain readable after Lidl deletes them from their site.
-- Regional duplicates of the same leaflet are collapsed by name; `LEAFLET_MAX_PER_COUNTRY` (default 6) caps
-  how many of the current leaflets are kept per country per fetch.
+- **Everything on offer is archived**: `LEAFLET_MAX_PER_COUNTRY` defaults to 0 (no cap), and leaflets
+  that merely share a name (e.g. five distinct "Folheto Especial" seasonal editions) are all kept —
+  dedup is by flyer ID, not name. Set a positive number only if you genuinely want a cap. Seasonal
+  catalogs that span ~2 months are kept too — tune `LEAFLET_MAX_VALIDITY_DAYS` (default 45) upward
+  if long-validity catalogs should be skipped instead.
 - Runs automatically after the weekly crawl (same scheduler), one-command manually with
   `npm run leaflets -- --countries=PT,DE` (add `--nopdf` for metadata-only) or via
   `POST /api/leaflets` (`{"countries":["PT"],"downloadPdf":true}`, protected by `CRAWL_SECRET`)
@@ -521,10 +534,13 @@ page ("Anleitungen & Downloads", served from `manuals.sit-connect.com`). Lidlr a
   enabled by default; CH/GB are included but disabled.
 - `client.ts` — HTTP client with polite delay between page fetches, retries/backoff on 401/429, pagination to
   `fetchsize` limits, and mapping of Lidl's gridbox items into `LidlItem` (price, was-price, stock badges,
-  ribbons/promos, images).
-- `crawler.ts` — per run: for each enabled country × brand query, page through results, upsert products and
+  ribbons/promos, images). Search results report their total (`numFound`) so truncation is visible.
+- `crawler.ts` — per run: for each enabled country × brand query, page through results (up to
+  `CRAWL_MAX_PER_BRAND` items per brand query, default 3000), upsert products and
   country listings, write a `Snapshot` per listing per crawl, count new items and price changes, and record a
-  `CrawlRun`.
+  `CrawlRun` (whose notes count any queries truncated by the cap — if a crawl summary shows
+  `truncated > 0`, raise `CRAWL_MAX_PER_BRAND`). Note: products whose titles lack the brand
+  keywords are unreachable by keyword search — those come in via the ParkPrice import.
 
 The scheduler (see [Automated crawl schedule](#automated-crawl-schedule)) runs everything in-process;
 disable it with `SCHEDULER_DISABLED=1` and drive crawls yourself via `/api/crawl` from external cron.

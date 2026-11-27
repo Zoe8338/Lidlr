@@ -202,6 +202,17 @@ function Jobs() {
         <span className="meta">Match stored leaflet offers against tracked products and queue notifications.</span>
         <button className="button" type="submit">Evaluate offers</button>
       </form>
+      <form action={adminRunJob} className="card" style={{ padding: 14, display: "grid", gap: 8 }}>
+        <input type="hidden" name="job" value="parkprice" />
+        <strong>Import from ParkPrice</strong>
+        <span className="meta">
+          Match ParkPrice&apos;s English titles, images and manual links onto crawled products
+          (via IAN numbers, so run a crawl first). Polite: 3 s between requests, resumes from
+          cached progress. Limit = pages to process this run.
+        </span>
+        {limitInput("limit (default 300)")}
+        <button className="button" type="submit">Start ParkPrice import</button>
+      </form>
     </div>
   );
 }

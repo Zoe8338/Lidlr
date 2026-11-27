@@ -8,7 +8,9 @@ const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/12
 const ESI_OVERVIEW = "https://esi.leaflets.schwarz/overview";
 const FLYER_API = "https://endpoints.leaflets.schwarz/v4/flyer";
 const DELAY_MS = Number(process.env.CRAWL_DELAY_MS || 400);
-const MAX_PER_COUNTRY = Number(process.env.LEAFLET_MAX_PER_COUNTRY || 6);
+// Cap per country per fetch; 0 (the default) = archive every leaflet the
+// storefront offers — weekly flyers, seasonal specials, all of them.
+const MAX_PER_COUNTRY = Number(process.env.LEAFLET_MAX_PER_COUNTRY || 0);
 // Evergreen "leaflets" (Lidl Plus perks, seasonal toy catalogues valid for months) are
 // skipped: anything valid longer than this is not a weekly flyer.
 const MAX_VALIDITY_DAYS = Number(process.env.LEAFLET_MAX_VALIDITY_DAYS || 45);
@@ -71,8 +73,9 @@ async function discoverCountry(cc: CountryConfig): Promise<
       const name = attr(card, "data-track-name") ?? "";
       const img = card.match(/<img[^>]*class="flyer__image"[^>]*src="([^"]+)"/);
       const coverUrl = img ? img[1] : null;
-      // Regional duplicates share the same name; keep only the first occurrence.
-      if (cards.some((c) => c.name === name)) continue;
+      // NOTE: several distinct flyers can share one name (e.g. five different
+      // "Folheto Especial" seasonal catalogs) — dedupe only by flyer ID so
+      // nothing gets dropped; identical PDFs are still deduped at storage.
       cards.push({ flyerId, name, coverUrl });
     }
     if (cards.length) return cards;
@@ -236,7 +239,7 @@ export async function fetchLeaflets(
       errors++;
       continue;
     }
-    const limited = cards.slice(0, MAX_PER_COUNTRY);
+    const limited = MAX_PER_COUNTRY > 0 ? cards.slice(0, MAX_PER_COUNTRY) : cards;
     for (const card of limited) {
       try {
         const meta = await (async () => {

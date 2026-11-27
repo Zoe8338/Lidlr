@@ -117,6 +117,22 @@ export async function adminRunJob(formData: FormData) {
         JSON.stringify(await reconcileTranslations({ limit: max })),
       );
       break;
+    case "parkprice": {
+      void runJob("ParkPrice import", async () => {
+        const { importParkPrice } = await import("@/lib/parkprice");
+        const lines: string[] = [];
+        const summary = await importParkPrice({
+          max: max ?? 300,
+          log: (line) => {
+            lines.push(line);
+            if (lines.length > 40) lines.shift();
+            console.log(`[parkprice] ${line}`);
+          },
+        });
+        return JSON.stringify(summary, null, 2) + (lines.length ? `\nlast log:\n${lines.join("\n")}` : "");
+      });
+      break;
+    }
     default:
       throw new Error("Unknown job");
   }

@@ -50,6 +50,8 @@ services:
       # Leaflet archive: store PDF copies of each country's weekly flyer in the data volume
       # (set to "0" to keep covers/metadata only).
       ARCHIVE_LEAFLET_PDF: "${ARCHIVE_LEAFLET_PDF:-1}"
+      # Per-country cap per leaflet fetch; 0 (default) = archive every leaflet offered
+      LEAFLET_MAX_PER_COUNTRY: "${LEAFLET_MAX_PER_COUNTRY:-0}"
       # Skip evergreen long-dated catalogs; only weekly-leaflets get archived
       LEAFLET_MAX_VALIDITY_DAYS: "${LEAFLET_MAX_VALIDITY_DAYS:-45}"
       # Refuse PDFs larger than this (MB)

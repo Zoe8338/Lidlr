@@ -143,7 +143,12 @@ export async function searchPage(opts: {
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
-export async function brandItems(cc: CountryConfig, brandQuery: string, maxItems = 1000, signal?: AbortSignal) {
+export async function brandItems(
+  cc: CountryConfig,
+  brandQuery: string,
+  maxItems = 1000,
+  signal?: AbortSignal,
+): Promise<{ items: LidlItem[]; numFound: number }> {
   const out: LidlItem[] = [];
   let offset = 0;
   let numFound = Infinity;
@@ -157,5 +162,5 @@ export async function brandItems(cc: CountryConfig, brandQuery: string, maxItems
     if (!items.length) break;
     await sleep(DELAY_MS);
   }
-  return out;
+  return { items: out, numFound: Number.isFinite(numFound) ? numFound : out.length };
 }
