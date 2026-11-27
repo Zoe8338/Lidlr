@@ -338,8 +338,20 @@ export async function fetchLeaflets(
 
         const name = String(meta?.name ?? card.name) || card.name;
         const title = meta?.title != null ? String(meta.title) : null;
-        const validFrom = meta?.startDate ? new Date(String(meta.startDate)) : null;
-        const validUntil = meta?.endDate ? new Date(String(meta.endDate)) : null;
+        // startDate/endDate are the publication window (Lidl publishes next
+        // week's flyer days early); offerStartDate/offerEndDate are when the
+        // offers actually run — use those so "Next Week" tabs and archives
+        // reflect the real sale period, falling back to the publication dates.
+        const validFrom = meta?.offerStartDate
+          ? new Date(String(meta.offerStartDate))
+          : meta?.startDate
+            ? new Date(String(meta.startDate))
+            : null;
+        const validUntil = meta?.offerEndDate
+          ? new Date(String(meta.offerEndDate))
+          : meta?.endDate
+            ? new Date(String(meta.endDate))
+            : null;
         const coverUrl = meta?.thumbnailUrl ? String(meta.thumbnailUrl) : card.coverUrl;
         const pdfUrl = meta?.pdfUrl ? String(meta.pdfUrl) : null;
         const viewUrl = meta?.flyerUrlAbsolute ? String(meta.flyerUrlAbsolute) : null;
